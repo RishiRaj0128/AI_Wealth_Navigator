@@ -30,15 +30,51 @@ router = APIRouter()
 
 @router.get("/health")
 def get_health():
-    """Returns system health, database connection, and Razorpay configuration."""
+    """Real health, not a constant.
+
+    This previously returned status "healthy" unconditionally without ever
+    touching PostgreSQL, so the UI's connection indicator could not actually
+    go red when the database was down. It now runs a trivial `SELECT 1` and
+    reports what it observed.
+
+    The original keys (`status`, `database`, `razorpay_configured`,
+    `gemini_configured`) are preserved verbatim so existing callers and the
+    legacy operations screens keep working; the newer `backend`/`ai` fields
+    are what the Wealth Navigator status indicators read.
+    """
+    database_online = False
+    database_error = None
+    try:
+        conn = get_db_connection()
+        c = conn.cursor()
+        c.execute("SELECT 1;")
+        c.fetchone()
+        c.close()
+        conn.close()
+        database_online = True
+    except Exception as e:
+        database_error = str(e)[:200]
+
+    ai_configured = bool(
+        settings.GEMINI_API_KEY
+        and not settings.GEMINI_API_KEY.startswith("YOUR_")
+        and len(settings.GEMINI_API_KEY) > 10
+    )
+
     return {
-        "status": "healthy",
+        # Legacy contract — unchanged shape, now reflecting real state.
+        "status": "healthy" if database_online else "degraded",
         "app": settings.APP_NAME,
         "version": settings.APP_VERSION,
         "database": "PostgreSQL",
         "razorpay_configured": razorpay_client.is_configured,
         "ai_provider": settings.AI_PROVIDER,
-        "gemini_configured": bool(settings.GEMINI_API_KEY and not settings.GEMINI_API_KEY.startswith("YOUR_"))
+        "gemini_configured": ai_configured,
+        # Explicit tri-state the frontend status indicators consume.
+        "backend": "online",
+        "database_status": "online" if database_online else "offline",
+        "database_error": database_error,
+        "ai": "configured" if ai_configured else "not_configured",
     }
 
 # =============================================================================
@@ -983,36 +1019,111 @@ def list_financial_accounts():
     return rows
 
 @router.get("/financial/transactions")
-def list_financial_transactions(limit: int = 100, account_id: Optional[str] = None, merchant: Optional[str] = None):
-    """Retrieves persisted financial transactions from PostgreSQL, optionally filtered."""
-    from app.engine.financial_tools import FinancialTools
-    result = FinancialTools.get_transactions(account_id=account_id, merchant=merchant, limit=limit)
+def list_financial_transactions(
+    limit: int = 100,
+    account_id: Optional[str] = None,
+    merchant: Optional[str] = None,
+    scope: str = "account",
+):
+    """The user's transactions.
+
+    Defaults to the resolved primary account rather than every row in the
+    table: without scoping, this returned the user's own transactions mixed
+    with rows imported from operations data, which made the Data page
+    disagree with every other screen. Pass `scope=all` to opt out (the legacy
+    operations screens do).
+    """
+    from app.engine.financial_tools import FinancialTools, _resolve_account_id
+
+    resolved = account_id
+    if not resolved and scope != "all":
+        conn = get_db_connection()
+        c = conn.cursor()
+        resolved = _resolve_account_id(c, None)
+        c.close()
+        conn.close()
+
+    result = FinancialTools.get_transactions(account_id=resolved, merchant=merchant, limit=limit)
     return result["transactions"]
 
 @router.get("/financial/summary")
-def get_financial_summary():
-    """Returns connected-data summary counts for the Financial Copilot dashboard cards."""
+def get_financial_summary(account_id: Optional[str] = None):
+    """Connected-data counts PLUS the user's deterministic financial position.
+
+    The original response exposed only `total_volume_inr`, which summed every
+    transaction amount regardless of direction — adding salary credits to rent
+    debits produces a number with no financial meaning. That key is retained so
+    existing callers keep working, but it is now accompanied by a correct
+    credit/debit split and by the real position (balance, income, expenses,
+    savings, savings rate) computed by the shared position engine.
+    """
+    from app.engine.financial_tools import FinancialTools, _resolve_account_id
+
+    position = FinancialTools.get_financial_position(account_id=account_id)
+
     conn = get_db_connection()
     c = conn.cursor()
+
+    # Scope the money figures to ONE account — the same account the position
+    # engine resolved. Summing every row in the table mixed this user's 162
+    # personal transactions with 67 rows left over from an operations-data
+    # import, so the Data page and the dashboard reported different totals for
+    # what the user thinks of as "my transactions".
+    resolved_account_id = position.get("account_id") or _resolve_account_id(c, account_id)
+
+    scope_clause = "WHERE account_id = %s" if resolved_account_id else ""
+    scope_params = (resolved_account_id,) if resolved_account_id else ()
+
+    c.execute(f"SELECT COUNT(*) as cnt FROM financial_transactions {scope_clause};", scope_params)
+    transactions = c.fetchone()["cnt"]
+    c.execute(f"""
+        SELECT COALESCE(SUM(CASE WHEN transaction_type = 'credit' THEN amount ELSE 0 END), 0) as credits,
+               COALESCE(SUM(CASE WHEN transaction_type = 'debit'  THEN amount ELSE 0 END), 0) as debits,
+               COALESCE(SUM(amount), 0) as total
+        FROM financial_transactions {scope_clause};
+    """, scope_params)
+    totals = c.fetchone()
+
     c.execute("SELECT COUNT(*) as cnt FROM financial_documents;")
     documents = c.fetchone()["cnt"]
-    c.execute("SELECT COUNT(*) as cnt FROM financial_transactions;")
-    transactions = c.fetchone()["cnt"]
-    c.execute("SELECT COUNT(*) as cnt FROM financial_accounts;")
-    accounts = c.fetchone()["cnt"]
-    c.execute("SELECT COALESCE(SUM(amount), 0) as total FROM financial_transactions;")
-    total_volume = float(c.fetchone()["total"])
     c.execute("SELECT COUNT(*) as cnt FROM financial_documents WHERE processing_status IN ('ready', 'partial');")
     documents_ready = c.fetchone()["cnt"]
+    c.execute("SELECT COUNT(*) as cnt FROM financial_accounts;")
+    accounts = c.fetchone()["cnt"]
+
+    if resolved_account_id:
+        c.execute("SELECT COUNT(*) as cnt FROM financial_goals WHERE status = 'active' AND account_id = %s;",
+                  (resolved_account_id,))
+    else:
+        c.execute("SELECT COUNT(*) as cnt FROM financial_goals WHERE status = 'active';")
+    active_goals = c.fetchone()["cnt"]
+
     c.close()
     conn.close()
+
     return {
+        "account_id": resolved_account_id,
         "documents": documents,
         "documents_ready": documents_ready,
         "transactions": transactions,
         "accounts": accounts,
-        "total_volume_inr": total_volume
+        "active_goals": active_goals,
+        # Retained for backward compatibility. It sums credits and debits
+        # together, which has no financial meaning — prefer the split below.
+        "total_volume_inr": float(totals["total"]),
+        "total_credits_inr": float(totals["credits"]),
+        "total_debits_inr": float(totals["debits"]),
+        "position": position,
     }
+
+
+@router.get("/financial/position")
+def get_financial_position(account_id: Optional[str] = None, months: int = 3):
+    """The user's financial position — current balance, average monthly income,
+    expenses, savings and savings rate — with its calculation basis and
+    assumptions. Computed entirely in the backend; the AI never produces these."""
+    from app.engine.financial_tools import FinancialTools
+    return FinancialTools.get_financial_position(account_id=account_id, months=months)
 
 class CopilotAskRequest(BaseModel):
     query: str
@@ -1036,11 +1147,36 @@ def ask_financial_copilot(req: CopilotAskRequest):
     return result
 
 @router.get("/financial/copilot/runs")
-def list_copilot_runs(limit: int = 20):
-    """Lists recent Financial Copilot analysis runs (auditability record)."""
+def list_copilot_runs(limit: int = 20, surface: Optional[str] = None):
+    """Recent analysis runs (the auditability record).
+
+    `financial_analysis_runs` is shared with the inherited operations Copilot
+    and still holds questions asked before this became a personal-finance
+    product — payment-statement queries, "total volume" questions and the like.
+    Those records are preserved and still returned by default, so the Platform
+    tooling and the audit trail lose nothing.
+
+    Passing `surface=wealth` returns only runs produced by the Wealth Navigator
+    agent, so the product's own history does not open on a previous product's
+    questions. The marker is the `assumptions` key, which the wealth agent
+    always emits (including in its fallback shapes) and the earlier agent never
+    did — a structural test, not a keyword guess at the question text.
+    """
     conn = get_db_connection()
     c = conn.cursor()
-    c.execute("SELECT run_id, query, model, created_at FROM financial_analysis_runs ORDER BY created_at DESC LIMIT %s;", (limit,))
+    if surface == "wealth":
+        c.execute("""
+            SELECT run_id, query, model, created_at
+            FROM financial_analysis_runs
+            WHERE response_json IS NOT NULL AND response_json LIKE %s
+            ORDER BY created_at DESC LIMIT %s;
+        """, ('%"assumptions"%', limit))
+    else:
+        c.execute("""
+            SELECT run_id, query, model, created_at
+            FROM financial_analysis_runs
+            ORDER BY created_at DESC LIMIT %s;
+        """, (limit,))
     rows = [dict(r) for r in c.fetchall()]
     c.close()
     conn.close()
@@ -1164,7 +1300,7 @@ def simulate_goal_scenario(goal_id: str, req: SimulateScenarioRequest):
 
 
 @router.get("/financial/goals/{goal_id}/recommendations")
-def get_goal_recommendations(goal_id: str):
+def get_goal_recommendations(goal_id: str, risk_preference: Optional[str] = None):
     """
     Runs deterministic rule-based next-best actions for accelerating a specific goal.
     Persists audit log to wealth_recommendations.
@@ -1180,8 +1316,11 @@ def get_goal_recommendations(goal_id: str):
     goal = dict(goal_row)
     account_id = goal.get("account_id")
 
-    # Run deterministic next-best actions
-    result = FinancialTools.recommend_next_actions(account_id=account_id, goal_id=goal_id)
+    # Run deterministic next-best actions. Risk preference falls through to the
+    # goal's own stored preference unless the caller explicitly overrides it.
+    result = FinancialTools.recommend_next_actions(
+        account_id=account_id, goal_id=goal_id, risk_preference=risk_preference
+    )
 
     # Persist audit record
     rec_id = f"wrec_{uuid.uuid4().hex[:10]}"

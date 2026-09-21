@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Target, TrendingUp, Sparkles, Plus, AlertCircle, CheckCircle2,
-  Calendar, ArrowRight, ShieldCheck, RefreshCw, Sliders, ChevronRight, Edit3
+  Target, Plus, RefreshCw, AlertCircle, ChevronDown, ArrowRight,
+  Sparkles, X, Check
 } from 'lucide-react';
-import { Card, Metric, Button, Chip } from '../primitives';
+import { Button, Skeleton } from '../primitives';
+import { useRefreshableData, formatINR, formatDate } from '../hooks/useRefreshableData';
 import {
   fetchFinancialGoals,
   createFinancialGoal,
@@ -14,864 +14,625 @@ import {
   fetchFinancialAccounts
 } from '../api';
 
-export default function GoalsView() {
-  const [goals, setGoals] = useState([]);
-  const [accounts, setAccounts] = useState([]);
-  const [selectedGoalId, setSelectedGoalId] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+// Goals uses progressive disclosure: the list carries only what is needed to
+// choose a goal (name, progress, date, status). Everything else — required
+// monthly saving, projected completion, the what-if simulator and the
+// recommended actions — appears once a goal is selected. Putting all of it in
+// the list is what made this page unreadable in the first viewport.
 
-  // New goal modal / form state
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [newGoal, setNewGoal] = useState({
-    goal_name: '',
-    target_amount: '',
-    target_date: '',
-    risk_preference: 'moderate',
-    account_id: ''
+const STATUS_META = {
+  ahead:       { cls: 'wn-badge-good',    label: 'Ahead',       fill: '' },
+  on_track:    { cls: 'wn-badge-good',    label: 'On track',    fill: '' },
+  behind:      { cls: 'wn-badge-warn',    label: 'Behind',      fill: 'is-behind' },
+  overdue:     { cls: 'wn-badge-bad',     label: 'Overdue',     fill: 'is-late' },
+  at_risk:     { cls: 'wn-badge-warn',    label: 'At risk',     fill: 'is-behind' },
+  completed:   { cls: 'wn-badge-good',    label: 'Completed',   fill: '' },
+  no_deadline: { cls: 'wn-badge-neutral', label: 'No deadline', fill: '' },
+  paused:      { cls: 'wn-badge-neutral', label: 'Paused',      fill: '' },
+  cancelled:   { cls: 'wn-badge-neutral', label: 'Cancelled',   fill: '' },
+};
+const statusOf = (s) => STATUS_META[s] || STATUS_META.no_deadline;
+
+const PRESETS = [0, 2000, 5000, 10000, 15000];
+
+function CreateGoalDialog({ accounts, onClose, onCreated }) {
+  const [form, setForm] = useState({
+    goal_name: '', target_amount: '', target_date: '', risk_preference: 'moderate'
   });
-  const [creating, setCreating] = useState(false);
-
-  // Update progress state
-  const [updatingGoalId, setUpdatingGoalId] = useState(null);
-  const [updateAmount, setUpdateAmount] = useState('');
-
-  // What-if simulator state
-  const [monthlyExtra, setMonthlyExtra] = useState(5000);
-  const [projectionMonths, setProjectionMonths] = useState(12);
-  const [simulating, setSimulating] = useState(false);
-  const [simulationResult, setSimulationResult] = useState(null);
-
-  // Next-best actions state
-  const [recommendations, setRecommendations] = useState(null);
-  const [loadingRecs, setLoadingRecs] = useState(false);
-
-  // Load initial data
-  const loadGoalsData = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const [goalsData, accsData] = await Promise.all([
-        fetchFinancialGoals(null, 'all').catch(() => ({ goals: [] })),
-        fetchFinancialAccounts().catch(() => [])
-      ]);
-      const gList = goalsData.goals || [];
-      setGoals(gList);
-      setAccounts(accsData || []);
-
-      if (gList.length > 0 && !selectedGoalId) {
-        setSelectedGoalId(gList[0].goal_id);
-      }
-    } catch (err) {
-      console.error("Failed to load goals data:", err);
-      setError("Could not load financial goals. Please verify backend connection.");
-    } finally {
-      setLoading(false);
-    }
-  };
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
 
   useEffect(() => {
-    loadGoalsData();
-  }, []);
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
 
-  // Run simulation whenever selected goal, monthly extra, or months change
-  useEffect(() => {
-    if (!selectedGoalId) return;
-
-    let isMounted = true;
-    const runSimulation = async () => {
-      try {
-        setSimulating(true);
-        const res = await simulateGoalScenario(selectedGoalId, monthlyExtra, projectionMonths);
-        if (isMounted) {
-          setSimulationResult(res);
-        }
-      } catch (err) {
-        console.error("Simulation error:", err);
-      } finally {
-        if (isMounted) setSimulating(false);
-      }
-    };
-
-    const timer = setTimeout(runSimulation, 250);
-    return () => {
-      isMounted = false;
-      clearTimeout(timer);
-    };
-  }, [selectedGoalId, monthlyExtra, projectionMonths]);
-
-  // Handle goal creation
-  const handleCreateGoal = async (e) => {
+  const submit = async (e) => {
     e.preventDefault();
-    if (!newGoal.goal_name || !newGoal.target_amount) return;
+    if (!form.goal_name.trim() || !form.target_amount) return;
+    setBusy(true);
+    setErr(null);
     try {
-      setCreating(true);
       const created = await createFinancialGoal({
-        account_id: newGoal.account_id || (accounts[0]?.account_id || null),
-        goal_name: newGoal.goal_name,
-        target_amount: parseFloat(newGoal.target_amount),
-        target_date: newGoal.target_date || null,
-        risk_preference: newGoal.risk_preference
+        account_id: accounts[0]?.account_id || null,
+        goal_name: form.goal_name.trim(),
+        target_amount: parseFloat(form.target_amount),
+        target_date: form.target_date || null,
+        risk_preference: form.risk_preference,
       });
-      setShowCreateModal(false);
-      setNewGoal({ goal_name: '', target_amount: '', target_date: '', risk_preference: 'moderate', account_id: '' });
-      await loadGoalsData();
-      if (created?.goal?.goal_id) {
-        setSelectedGoalId(created.goal.goal_id);
-      }
-    } catch (err) {
-      alert(err.message || "Failed to create goal");
+      onCreated(created?.goal?.goal_id);
+    } catch (e2) {
+      setErr(e2.message || 'Could not create this goal.');
     } finally {
-      setCreating(false);
+      setBusy(false);
     }
   };
-
-  // Handle updating goal progress
-  const handleUpdateProgress = async (goalId) => {
-    if (updateAmount === '' || isNaN(updateAmount)) return;
-    try {
-      await updateFinancialGoal(goalId, { current_amount: parseFloat(updateAmount) });
-      setUpdatingGoalId(null);
-      setUpdateAmount('');
-      await loadGoalsData();
-    } catch (err) {
-      alert(err.message || "Failed to update goal progress");
-    }
-  };
-
-  // Load proactive recommendations
-  const handleLoadRecommendations = async () => {
-    if (!selectedGoalId) return;
-    try {
-      setLoadingRecs(true);
-      const res = await fetchGoalRecommendations(selectedGoalId);
-      setRecommendations(res);
-    } catch (err) {
-      console.error("Failed to load recommendations:", err);
-    } finally {
-      setLoadingRecs(false);
-    }
-  };
-
-  const selectedGoal = goals.find(g => g.goal_id === selectedGoalId) || goals[0];
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
-      
-      {/* 1. Header Section */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px' }}>
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <h1 style={{ fontSize: '24px', fontWeight: 800, margin: 0, letterSpacing: '-0.02em', color: 'var(--text)' }}>
-              Goals &amp; What-If Scenarios
-            </h1>
-            <span style={{
-              fontSize: '11px',
-              padding: '2px 8px',
-              borderRadius: '12px',
-              background: 'rgba(16, 185, 129, 0.15)',
-              color: '#10b981',
-              fontWeight: 700
-            }}>
-              Deterministic Modeling
-            </span>
-          </div>
-          <p style={{ color: 'var(--text-muted)', fontSize: '13.5px', margin: '6px 0 0' }}>
-            Set wealth targets, simulate monthly savings impacts with verified historical cash-flow data, and review transparent assumptions.
-          </p>
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Create a goal"
+      onClick={onClose}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 300, display: 'flex',
+        alignItems: 'center', justifyContent: 'center', padding: 'var(--wn-s4)',
+        background: 'rgba(6, 8, 9, 0.72)', backdropFilter: 'blur(3px)'
+      }}
+    >
+      <form
+        onSubmit={submit}
+        onClick={e => e.stopPropagation()}
+        className="wn-panel"
+        style={{ width: '100%', maxWidth: '420px', display: 'flex', flexDirection: 'column', gap: 'var(--wn-s4)' }}
+      >
+        <div className="wn-section-head">
+          <h2 className="wn-section-title">New goal</h2>
+          <button type="button" className="wn-link" onClick={onClose} aria-label="Close">
+            <X size={14} />
+          </button>
         </div>
 
-        <div style={{ display: 'flex', gap: '10px' }}>
-          <Button
-            variant="secondary"
-            onClick={loadGoalsData}
-            icon={RefreshCw}
-            disabled={loading}
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 'var(--wn-s2)' }}>
+          <span className="wn-stat-label">Goal name</span>
+          <input
+            className="wn-field" required autoFocus
+            value={form.goal_name}
+            onChange={e => setForm({ ...form, goal_name: e.target.value })}
+            placeholder="Emergency fund"
+          />
+        </label>
+
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 'var(--wn-s2)' }}>
+          <span className="wn-stat-label">Target amount (₹)</span>
+          <input
+            className="wn-field" type="number" min="1" required
+            value={form.target_amount}
+            onChange={e => setForm({ ...form, target_amount: e.target.value })}
+            placeholder="200000"
+          />
+        </label>
+
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 'var(--wn-s2)' }}>
+          <span className="wn-stat-label">Target date</span>
+          <input
+            className="wn-field" type="date"
+            value={form.target_date}
+            onChange={e => setForm({ ...form, target_date: e.target.value })}
+          />
+        </label>
+
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 'var(--wn-s2)' }}>
+          <span className="wn-stat-label">Approach</span>
+          <select
+            className="wn-field"
+            value={form.risk_preference}
+            onChange={e => setForm({ ...form, risk_preference: e.target.value })}
           >
-            Refresh
-          </Button>
-          <Button
-            variant="primary"
-            onClick={() => setShowCreateModal(true)}
-            icon={Plus}
-          >
-            Create New Goal
-          </Button>
-        </div>
-      </div>
+            <option value="conservative">Conservative — protect a cash buffer first</option>
+            <option value="moderate">Moderate — balanced saving</option>
+            <option value="aggressive">Aggressive — reach goals sooner</option>
+          </select>
+        </label>
 
-      {error && (
-        <div style={{
-          padding: '14px 18px',
-          borderRadius: '8px',
-          background: 'rgba(239, 68, 68, 0.1)',
-          border: '1px solid rgba(239, 68, 68, 0.25)',
-          color: '#ef4444',
-          fontSize: '13px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '10px'
-        }}>
-          <AlertCircle size={16} />
-          <span>{error}</span>
-        </div>
-      )}
-
-      {/* 2. Top Summary KPI Cards */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
-        gap: '16px'
-      }}>
-        <Card variant="glass">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <div>
-              <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                Active Goals
-              </p>
-              <h3 style={{ fontSize: '28px', fontWeight: 800, margin: '8px 0 0', color: 'var(--text)' }}>
-                {goals.length}
-              </h3>
-            </div>
-            <div style={{ padding: '10px', borderRadius: '8px', background: 'rgba(99, 102, 241, 0.12)', color: 'var(--primary)' }}>
-              <Target size={20} />
-            </div>
-          </div>
-          <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '12px 0 0' }}>
-            {goals.filter(g => g.status === 'active').length} in progress · {goals.filter(g => g.status === 'completed').length} completed
-          </p>
-        </Card>
-
-        <Card variant="glass">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <div>
-              <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                Total Target Volume
-              </p>
-              <h3 style={{ fontSize: '28px', fontWeight: 800, margin: '8px 0 0', color: 'var(--text)' }}>
-                ₹{goals.reduce((sum, g) => sum + (g.target_amount || 0), 0).toLocaleString('en-IN')}
-              </h3>
-            </div>
-            <div style={{ padding: '10px', borderRadius: '8px', background: 'rgba(16, 185, 129, 0.12)', color: '#10b981' }}>
-              <TrendingUp size={20} />
-            </div>
-          </div>
-          <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '12px 0 0' }}>
-            ₹{goals.reduce((sum, g) => sum + (g.current_amount || 0), 0).toLocaleString('en-IN')} saved so far
-          </p>
-        </Card>
-
-        <Card variant="glass">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <div>
-              <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                Active Scenario Focus
-              </p>
-              <h3 style={{ fontSize: '20px', fontWeight: 800, margin: '8px 0 0', color: selectedGoal ? 'var(--text)' : 'var(--text-muted)' }}>
-                {selectedGoal ? selectedGoal.goal_name : 'No Goal Selected'}
-              </h3>
-            </div>
-            <div style={{ padding: '10px', borderRadius: '8px', background: 'rgba(245, 158, 11, 0.12)', color: '#f59e0b' }}>
-              <Sliders size={20} />
-            </div>
-          </div>
-          <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '12px 0 0' }}>
-            {selectedGoal?.target_date ? `Target date: ${selectedGoal.target_date}` : 'Ongoing goal'}
-          </p>
-        </Card>
-      </div>
-
-      {/* 3. Main Workspace: Goals List (Left) + What-If Simulation & Actions (Right) */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'minmax(320px, 1.2fr) minmax(400px, 1.8fr)',
-        gap: '24px',
-        alignItems: 'start'
-      }}>
-        
-        {/* Left: Goals Cards List */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h2 style={{ fontSize: '16px', fontWeight: 700, margin: 0, color: 'var(--text)' }}>
-              Your Financial Goals
-            </h2>
-            <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-              Click to run scenario
-            </span>
-          </div>
-
-          {goals.length === 0 ? (
-            <Card variant="glass" style={{ textAlign: 'center', padding: '40px 20px' }}>
-              <Target size={36} style={{ color: 'var(--text-muted)', margin: '0 auto 12px', opacity: 0.6 }} />
-              <p style={{ fontWeight: 600, fontSize: '15px', color: 'var(--text)', margin: '0 0 6px' }}>
-                No goals created yet
-              </p>
-              <p style={{ fontSize: '13px', color: 'var(--text-muted)', margin: '0 0 16px', maxWidth: '280px', marginInline: 'auto' }}>
-                Set up your first financial milestone to simulate savings timelines and discover savings opportunities.
-              </p>
-              <Button variant="primary" onClick={() => setShowCreateModal(true)} icon={Plus}>
-                Create Your First Goal
-              </Button>
-            </Card>
-          ) : (
-            goals.map(goal => {
-              const isSelected = goal.goal_id === selectedGoalId;
-              const target = goal.target_amount || 1;
-              const current = goal.current_amount || 0;
-              // Safe percentage guard to prevent bar overflow
-              const pct = Math.min(100, Math.max(0, Math.round((current / target) * 100)));
-
-              return (
-                <div
-                  key={goal.goal_id}
-                  onClick={() => setSelectedGoalId(goal.goal_id)}
-                  style={{
-                    padding: '16px 20px',
-                    borderRadius: '10px',
-                    background: isSelected ? 'rgba(99, 102, 241, 0.08)' : 'rgba(255, 255, 255, 0.02)',
-                    border: isSelected ? '1px solid var(--primary)' : '1px solid var(--border)',
-                    cursor: 'pointer',
-                    transition: 'all 180ms ease-in-out',
-                    boxShadow: isSelected ? '0 0 16px rgba(99, 102, 241, 0.15)' : 'none'
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span style={{ fontWeight: 700, fontSize: '15px', color: 'var(--text)' }}>
-                          {goal.goal_name}
-                        </span>
-                        <Chip tone={goal.risk_preference === 'aggressive' ? 'critical' : goal.risk_preference === 'conservative' ? 'verified' : 'neutral'}>
-                          {goal.risk_preference}
-                        </Chip>
-                      </div>
-                      {goal.target_date && (
-                        <span style={{ fontSize: '11.5px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '4px' }}>
-                          <Calendar size={12} /> Target: {goal.target_date}
-                        </span>
-                      )}
-                    </div>
-
-                    <span style={{
-                      fontSize: '11px',
-                      fontWeight: 700,
-                      padding: '2px 8px',
-                      borderRadius: '10px',
-                      background: pct >= 100 ? 'rgba(16, 185, 129, 0.2)' : 'rgba(99, 102, 241, 0.15)',
-                      color: pct >= 100 ? '#10b981' : 'var(--primary)'
-                    }}>
-                      {pct}% Complete
-                    </span>
-                  </div>
-
-                  {/* Progress Bar with Safe Cap */}
-                  <div style={{
-                    width: '100%',
-                    height: '8px',
-                    borderRadius: '4px',
-                    background: 'rgba(255, 255, 255, 0.08)',
-                    overflow: 'hidden',
-                    margin: '12px 0 8px'
-                  }}>
-                    <motion.div
-                      initial={{ width: 0 }}
-                      animate={{ width: `${pct}%` }}
-                      transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
-                      style={{
-                        height: '100%',
-                        borderRadius: '4px',
-                        background: pct >= 100 ? 'linear-gradient(90deg, #10b981, #059669)' : 'linear-gradient(90deg, #6366f1, #3b82f6)'
-                      }}
-                    />
-                  </div>
-
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12.5px' }}>
-                    <span style={{ color: 'var(--text-muted)' }}>
-                      ₹{current.toLocaleString('en-IN')} of <strong style={{ color: 'var(--text)' }}>₹{target.toLocaleString('en-IN')}</strong>
-                    </span>
-
-                    {/* Quick Update Progress Inline Control */}
-                    {updatingGoalId === goal.goal_id ? (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }} onClick={e => e.stopPropagation()}>
-                        <input
-                          type="number"
-                          placeholder="New ₹"
-                          value={updateAmount}
-                          onChange={e => setUpdateAmount(e.target.value)}
-                          style={{
-                            width: '80px',
-                            padding: '4px 6px',
-                            borderRadius: '4px',
-                            background: 'rgba(0,0,0,0.4)',
-                            border: '1px solid var(--border)',
-                            color: '#fff',
-                            fontSize: '11px'
-                          }}
-                        />
-                        <button
-                          onClick={() => handleUpdateProgress(goal.goal_id)}
-                          style={{
-                            background: 'var(--primary)',
-                            border: 'none',
-                            color: '#fff',
-                            fontSize: '11px',
-                            fontWeight: 700,
-                            padding: '4px 8px',
-                            borderRadius: '4px',
-                            cursor: 'pointer'
-                          }}
-                        >
-                          Save
-                        </button>
-                        <button
-                          onClick={() => setUpdatingGoalId(null)}
-                          style={{
-                            background: 'transparent',
-                            border: 'none',
-                            color: 'var(--text-muted)',
-                            fontSize: '11px',
-                            cursor: 'pointer'
-                          }}
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    ) : (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setUpdatingGoalId(goal.goal_id);
-                          setUpdateAmount(String(current));
-                        }}
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          color: 'var(--primary)',
-                          fontSize: '11.5px',
-                          fontWeight: 600,
-                          cursor: 'pointer',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '4px',
-                          padding: 0
-                        }}
-                      >
-                        <Edit3 size={11} /> Update Progress
-                      </button>
-                    )}
-                  </div>
-                </div>
-              );
-            })
-          )}
-        </div>
-
-        {/* Right: What-If Scenario Simulator & Transparent Assumptions */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-          
-          {/* Simulator Controls Card */}
-          <Card variant="glass" style={{ padding: '24px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-              <div>
-                <h3 style={{ fontSize: '18px', fontWeight: 800, margin: 0, color: 'var(--text)' }}>
-                  Interactive "What-If" Scenario Simulator
-                </h3>
-                <p style={{ fontSize: '12.5px', color: 'var(--text-muted)', margin: '4px 0 0' }}>
-                  Simulating for: <strong style={{ color: '#fff' }}>{selectedGoal?.goal_name || 'Select a goal on the left'}</strong>
-                </p>
-              </div>
-
-              <span style={{
-                padding: '4px 10px',
-                borderRadius: '6px',
-                background: 'rgba(16, 185, 129, 0.1)',
-                color: '#10b981',
-                fontSize: '11px',
-                fontWeight: 700,
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px'
-              }}>
-                <Sparkles size={13} /> Real PostgreSQL Cashflow
-              </span>
-            </div>
-
-            {/* Controls */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
-              {/* Extra Savings Slider */}
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                  <label style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)' }}>
-                    Additional Monthly Savings
-                  </label>
-                  <span style={{ fontSize: '14px', fontWeight: 800, color: '#10b981' }}>
-                    +₹{monthlyExtra.toLocaleString('en-IN')}/mo
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="50000"
-                  step="500"
-                  value={monthlyExtra}
-                  onChange={e => setMonthlyExtra(Number(e.target.value))}
-                  style={{ width: '100%', accentColor: '#10b981', cursor: 'pointer' }}
-                />
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
-                  <span>₹0</span>
-                  <span>₹25,000</span>
-                  <span>₹50,000</span>
-                </div>
-              </div>
-
-              {/* Time Horizon Slider */}
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                  <label style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)' }}>
-                    Projection Horizon
-                  </label>
-                  <span style={{ fontSize: '14px', fontWeight: 800, color: 'var(--primary)' }}>
-                    {projectionMonths} Months ({roundToYear(projectionMonths)})
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min="1"
-                  max="60"
-                  step="1"
-                  value={projectionMonths}
-                  onChange={e => setProjectionMonths(Number(e.target.value))}
-                  style={{ width: '100%', accentColor: 'var(--primary)', cursor: 'pointer' }}
-                />
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
-                  <span>1 mo</span>
-                  <span>12 mo (1 yr)</span>
-                  <span>36 mo (3 yr)</span>
-                  <span>60 mo (5 yr)</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Projection Output Highlight Cards */}
-            {simulationResult && (
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-                gap: '12px',
-                marginTop: '22px',
-                paddingTop: '20px',
-                borderTop: '1px solid var(--border)'
-              }}>
-                <div style={{ padding: '12px', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)' }}>
-                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Projected Balance</span>
-                  <div style={{ fontSize: '20px', fontWeight: 800, color: '#10b981', marginTop: '4px' }}>
-                    ₹{simulationResult.projected_balance?.toLocaleString('en-IN') || 0}
-                  </div>
-                  <span style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>
-                    in {projectionMonths} months
-                  </span>
-                </div>
-
-                <div style={{ padding: '12px', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)' }}>
-                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Extra Capital Accumulated</span>
-                  <div style={{ fontSize: '20px', fontWeight: 800, color: 'var(--primary)', marginTop: '4px' }}>
-                    ₹{simulationResult.total_extra_saved?.toLocaleString('en-IN') || 0}
-                  </div>
-                  <span style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>
-                    pure extra savings
-                  </span>
-                </div>
-
-                {simulationResult.goal_projection && (
-                  <div style={{ padding: '12px', borderRadius: '8px', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)' }}>
-                    <span style={{ fontSize: '11px', color: '#f59e0b', textTransform: 'uppercase', fontWeight: 700 }}>Goal Timeline Impact</span>
-                    <div style={{ fontSize: '15px', fontWeight: 800, color: '#fff', marginTop: '4px' }}>
-                      {typeof simulationResult.goal_projection.months_saved === 'number'
-                        ? `${simulationResult.goal_projection.months_saved} Months Faster!`
-                        : simulationResult.goal_projection.months_saved}
-                    </div>
-                    <span style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>
-                      New target date: {simulationResult.goal_projection.new_projected_date || 'N/A'}
-                    </span>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* EXPLAINABILITY REQUIREMENT: Transparent Assumptions Box */}
-            {simulationResult?.assumptions?.length > 0 && (
-              <div style={{
-                marginTop: '20px',
-                padding: '16px',
-                borderRadius: '8px',
-                background: 'rgba(15, 23, 42, 0.75)',
-                border: '1px solid rgba(59, 130, 246, 0.25)'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
-                  <ShieldCheck size={16} style={{ color: '#3b82f6' }} />
-                  <span style={{ fontSize: '12.5px', fontWeight: 700, color: '#93c5fd', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
-                    Model Assumptions (Explainability Guarantee)
-                  </span>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  {simulationResult.assumptions.map((assump, idx) => (
-                    <div key={idx} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', fontSize: '12px', color: 'var(--text-muted)' }}>
-                      <span style={{ color: '#3b82f6', marginTop: '2px' }}>•</span>
-                      <span>{assump}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </Card>
-
-          {/* Proactive Next-Best Actions Card */}
-          <Card variant="glass" style={{ padding: '24px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <div>
-                <h3 style={{ fontSize: '16px', fontWeight: 700, margin: 0, color: 'var(--text)' }}>
-                  Proactive Next-Best Actions
-                </h3>
-                <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '4px 0 0' }}>
-                  Rule-based detection surfaces category spend increases (&gt;15% MoM) and maps them to goal acceleration.
-                </p>
-              </div>
-
-              <Button
-                variant="secondary"
-                onClick={handleLoadRecommendations}
-                icon={Sparkles}
-                disabled={loadingRecs || !selectedGoalId}
-              >
-                {loadingRecs ? 'Analyzing…' : 'Find Opportunities'}
-              </Button>
-            </div>
-
-            {recommendations?.recommendations?.length > 0 ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                {recommendations.recommendations.map((action, idx) => (
-                  <div
-                    key={idx}
-                    style={{
-                      padding: '14px 16px',
-                      borderRadius: '8px',
-                      background: 'rgba(255, 255, 255, 0.02)',
-                      border: '1px solid var(--border)',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '8px'
-                    }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span style={{ fontWeight: 700, fontSize: '14px', color: 'var(--text)' }}>
-                          {action.category}
-                        </span>
-                        <Chip tone={action.pct_increase > 15 ? 'critical' : 'accent'}>
-                          {action.pct_increase > 0 ? `+${action.pct_increase}% MoM` : 'Top Spend'}
-                        </Chip>
-                      </div>
-
-                      <span style={{ fontSize: '12.5px', color: 'var(--text-muted)' }}>
-                        Current monthly spend: <strong style={{ color: '#ef4444' }}>₹{action.current_monthly_spend?.toLocaleString('en-IN')}</strong>
-                      </span>
-                    </div>
-
-                    {/* Savings Options */}
-                    <div style={{
-                      display: 'grid',
-                      gridTemplateColumns: '1fr 1fr',
-                      gap: '10px',
-                      background: 'rgba(0,0,0,0.25)',
-                      padding: '10px',
-                      borderRadius: '6px',
-                      marginTop: '4px'
-                    }}>
-                      <div>
-                        <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600 }}>Option A: Trim 25%</span>
-                        <div style={{ fontSize: '13px', fontWeight: 800, color: '#10b981', marginTop: '2px' }}>
-                          +₹{action.reduction_options?.trim_25_pct?.monthly_saving?.toLocaleString('en-IN')}/mo
-                        </div>
-                        {action.reduction_options?.trim_25_pct?.goal_impact?.months_saved && (
-                          <span style={{ fontSize: '10.5px', color: '#93c5fd' }}>
-                            Saves {action.reduction_options.trim_25_pct.goal_impact.months_saved} mo on goal
-                          </span>
-                        )}
-                      </div>
-
-                      <div>
-                        <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600 }}>Option B: Trim 50%</span>
-                        <div style={{ fontSize: '13px', fontWeight: 800, color: '#10b981', marginTop: '2px' }}>
-                          +₹{action.reduction_options?.trim_50_pct?.monthly_saving?.toLocaleString('en-IN')}/mo
-                        </div>
-                        {action.reduction_options?.trim_50_pct?.goal_impact?.months_saved && (
-                          <span style={{ fontSize: '10.5px', color: '#93c5fd' }}>
-                            Saves {action.reduction_options.trim_50_pct.goal_impact.months_saved} mo on goal
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
-                Click <strong>"Find Opportunities"</strong> to evaluate month-over-month category surges and see concrete next-best actions.
-              </div>
-            )}
-          </Card>
-        </div>
-      </div>
-
-      {/* 4. Goal Creation Modal */}
-      <AnimatePresence>
-        {showCreateModal && (
-          <div style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0,0,0,0.7)',
-            backdropFilter: 'blur(6px)',
-            zIndex: 1000,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '20px'
-          }}>
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              style={{
-                width: '100%',
-                maxWidth: '480px',
-                background: 'rgba(15, 23, 42, 0.95)',
-                border: '1px solid var(--border)',
-                borderRadius: '12px',
-                padding: '28px',
-                boxShadow: '0 20px 40px rgba(0,0,0,0.6)'
-              }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                <h3 style={{ fontSize: '18px', fontWeight: 800, margin: 0, color: 'var(--text)' }}>
-                  Create Financial Goal
-                </h3>
-                <button
-                  onClick={() => setShowCreateModal(false)}
-                  style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '18px' }}
-                >
-                  ✕
-                </button>
-              </div>
-
-              <form onSubmit={handleCreateGoal} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 600, marginBottom: '6px', color: 'var(--text)' }}>
-                    Goal Name *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g., Emergency Fund, Home Down Payment"
-                    value={newGoal.goal_name}
-                    onChange={e => setNewGoal({ ...newGoal, goal_name: e.target.value })}
-                    style={{
-                      width: '100%',
-                      padding: '9px 12px',
-                      borderRadius: '6px',
-                      background: 'rgba(255,255,255,0.05)',
-                      border: '1px solid var(--border)',
-                      color: 'var(--text)',
-                      fontSize: '13px'
-                    }}
-                  />
-                </div>
-
-                <div>
-                  <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 600, marginBottom: '6px', color: 'var(--text)' }}>
-                    Target Amount (₹) *
-                  </label>
-                  <input
-                    type="number"
-                    required
-                    min="100"
-                    placeholder="e.g., 200000"
-                    value={newGoal.target_amount}
-                    onChange={e => setNewGoal({ ...newGoal, target_amount: e.target.value })}
-                    style={{
-                      width: '100%',
-                      padding: '9px 12px',
-                      borderRadius: '6px',
-                      background: 'rgba(255,255,255,0.05)',
-                      border: '1px solid var(--border)',
-                      color: 'var(--text)',
-                      fontSize: '13px'
-                    }}
-                  />
-                </div>
-
-                <div>
-                  <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 600, marginBottom: '6px', color: 'var(--text)' }}>
-                    Target Date (Optional)
-                  </label>
-                  <input
-                    type="date"
-                    value={newGoal.target_date}
-                    onChange={e => setNewGoal({ ...newGoal, target_date: e.target.value })}
-                    style={{
-                      width: '100%',
-                      padding: '9px 12px',
-                      borderRadius: '6px',
-                      background: 'rgba(255,255,255,0.05)',
-                      border: '1px solid var(--border)',
-                      color: 'var(--text)',
-                      fontSize: '13px'
-                    }}
-                  />
-                </div>
-
-                <div>
-                  <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 600, marginBottom: '6px', color: 'var(--text)' }}>
-                    Risk Preference
-                  </label>
-                  <select
-                    value={newGoal.risk_preference}
-                    onChange={e => setNewGoal({ ...newGoal, risk_preference: e.target.value })}
-                    style={{
-                      width: '100%',
-                      padding: '9px 12px',
-                      borderRadius: '6px',
-                      background: 'rgba(15, 23, 42, 1)',
-                      border: '1px solid var(--border)',
-                      color: 'var(--text)',
-                      fontSize: '13px'
-                    }}
-                  >
-                    <option value="conservative">Conservative (Low volatility focus)</option>
-                    <option value="moderate">Moderate (Balanced savings growth)</option>
-                    <option value="aggressive">Aggressive (Maximum accumulation)</option>
-                  </select>
-                </div>
-
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '12px' }}>
-                  <Button variant="secondary" onClick={() => setShowCreateModal(false)} type="button">
-                    Cancel
-                  </Button>
-                  <Button variant="primary" type="submit" disabled={creating}>
-                    {creating ? 'Creating…' : 'Create Goal'}
-                  </Button>
-                </div>
-              </form>
-            </motion.div>
+        {err && (
+          <div className="wn-note wn-note-error" role="alert">
+            <AlertCircle size={15} /><span>{err}</span>
           </div>
         )}
-      </AnimatePresence>
 
+        <div className="wn-head-actions" style={{ justifyContent: 'flex-end' }}>
+          <Button type="button" tier="secondary" onClick={onClose}>Cancel</Button>
+          <Button type="submit" tier="primary" disabled={busy}>
+            {busy ? 'Creating…' : 'Create goal'}
+          </Button>
+        </div>
+      </form>
     </div>
   );
 }
 
-function roundToYear(months) {
-  if (months === 12) return "1 yr";
-  if (months % 12 === 0) return `${months / 12} yrs`;
-  return `${(months / 12).toFixed(1)} yrs`;
+export default function GoalsView({ onNavigate, refreshToken }) {
+  const [selectedId, setSelectedId] = useState(null);
+  const [showCreate, setShowCreate] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [editValue, setEditValue] = useState('');
+
+  const [extra, setExtra] = useState(5000);
+  const [months, setMonths] = useState(12);
+  const [sim, setSim] = useState(null);
+  const [simulating, setSimulating] = useState(false);
+  const [simError, setSimError] = useState(null);
+
+  const [actions, setActions] = useState(null);
+  const [actionsLoading, setActionsLoading] = useState(false);
+
+  const { data, loading, refreshing, error, refresh } = useRefreshableData(
+    async () => {
+      const [goals, accounts] = await Promise.all([
+        fetchFinancialGoals(null, 'all'),
+        fetchFinancialAccounts().catch(() => []),
+      ]);
+      return { goals, accounts: accounts || [] };
+    },
+    refreshToken,
+    'Could not load your goals.'
+  );
+
+  // Stable identity between renders: the selection-guard effect below depends
+  // on this list, and a fresh array each render would re-run it every time.
+  // Cancelled goals are deliberately excluded: the user has abandoned them,
+  // so they should not occupy the list or affect the affordability summary.
+  const goals = useMemo(
+    () => (data?.goals?.goals || []).filter(g => g.status !== 'cancelled'),
+    [data]
+  );
+  const goalsMeta = data?.goals;
+  const selected = goals.find(g => g.goal_id === selectedId) || goals[0] || null;
+
+  // Keep a valid selection as the list changes (create, refresh, reseed).
+  useEffect(() => {
+    if (goals.length === 0) { setSelectedId(null); return; }
+    if (!selectedId || !goals.some(g => g.goal_id === selectedId)) {
+      setSelectedId(goals[0].goal_id);
+    }
+  }, [goals, selectedId]);
+
+  // Re-run the scenario whenever the goal or the inputs change. Debounced so
+  // dragging the slider does not fire a request per pixel.
+  useEffect(() => {
+    if (!selected?.goal_id) { setSim(null); return; }
+    let alive = true;
+    const timer = setTimeout(async () => {
+      setSimulating(true);
+      setSimError(null);
+      try {
+        const res = await simulateGoalScenario(selected.goal_id, extra, months);
+        if (alive) setSim(res);
+      } catch (err) {
+        console.error('Scenario simulation failed:', err);
+        if (alive) setSimError('Could not run this scenario.');
+      } finally {
+        if (alive) setSimulating(false);
+      }
+    }, 220);
+    return () => { alive = false; clearTimeout(timer); };
+  }, [selected?.goal_id, extra, months, refreshToken]);
+
+  // Actions follow the selected goal so its risk preference is applied.
+  useEffect(() => {
+    if (!selected?.goal_id) { setActions(null); return; }
+    let alive = true;
+    setActionsLoading(true);
+    fetchGoalRecommendations(selected.goal_id)
+      .then(r => { if (alive) setActions(r); })
+      .catch(() => { if (alive) setActions(null); })
+      .finally(() => { if (alive) setActionsLoading(false); });
+    return () => { alive = false; };
+  }, [selected?.goal_id, refreshToken]);
+
+  const saveProgress = async (goalId) => {
+    if (editValue === '' || Number.isNaN(Number(editValue))) return;
+    try {
+      await updateFinancialGoal(goalId, { current_amount: parseFloat(editValue) });
+      setEditingId(null);
+      setEditValue('');
+      refresh();
+    } catch (err) {
+      setSimError(err.message || 'Could not update this goal.');
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="wn-page">
+        <Skeleton variant="text" lines={2} />
+        <Skeleton variant="block" height="420px" />
+      </div>
+    );
+  }
+
+  const gp = sim?.goal_projection;
+  const meta = selected ? statusOf(selected.derived_status) : null;
+
+  return (
+    <div className="wn-page">
+
+      <header className="wn-head wn-enter">
+        <div>
+          <h1 className="wn-head-title">Goals</h1>
+          <p className="wn-head-sub">
+            Track what you are saving for, and see what changes if you save more.
+          </p>
+        </div>
+        <div className="wn-head-actions">
+          <Button tier="secondary" onClick={() => onNavigate?.('copilot')}><Sparkles size={13} strokeWidth={2} style={{ marginRight: 6, flexShrink: 0 }} aria-hidden="true" />
+            Ask Wealth AI
+          </Button>
+          <Button tier="secondary" onClick={refresh} disabled={refreshing} aria-label="Refresh goals"><RefreshCw size={13} strokeWidth={2} style={{ marginRight: 6, flexShrink: 0 }} aria-hidden="true" />
+            {refreshing ? 'Refreshing…' : 'Refresh'}
+          </Button>
+          <Button tier="primary" onClick={() => setShowCreate(true)}><Plus size={13} strokeWidth={2} style={{ marginRight: 6, flexShrink: 0 }} aria-hidden="true" />
+            New goal
+          </Button>
+        </div>
+      </header>
+
+      {error && (
+        <div className="wn-note wn-note-error" role="alert">
+          <AlertCircle size={15} /><span>{error} Showing the last goals loaded.</span>
+        </div>
+      )}
+
+      {goals.length === 0 && (
+        <section className="wn-panel wn-enter wn-enter-1">
+          <div className="wn-empty">
+            <Target size={34} className="wn-empty-icon" aria-hidden="true" />
+            <p className="wn-empty-title">No goals yet</p>
+            <p className="wn-empty-body">
+              Add what you are saving for — an emergency fund, a car, a trip — and we will show
+              whether you are on track and what happens if you save more each month.
+            </p>
+            <Button tier="primary" onClick={() => setShowCreate(true)}><Plus size={13} strokeWidth={2} style={{ marginRight: 6, flexShrink: 0 }} aria-hidden="true" />
+              Create your first goal
+            </Button>
+          </div>
+        </section>
+      )}
+
+      {goals.length > 0 && (
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'minmax(260px, 340px) minmax(0, 1fr)',
+            gap: 'var(--wn-s5)',
+            alignItems: 'start'
+          }}
+          className="wn-goals-layout"
+        >
+          {/* ---- Goal list: only what you need to choose one ---- */}
+          <section className="wn-section wn-enter wn-enter-1" aria-label="Your goals">
+            <div className="wn-section-head">
+              <h2 className="wn-section-title">Your goals</h2>
+              <span className="wn-section-note">{goals.length}</span>
+            </div>
+
+            {goals.map(goal => {
+              const m = statusOf(goal.derived_status);
+              const pct = Math.min(100, Math.max(0, goal.progress_percent ?? 0));
+              const isSel = goal.goal_id === selected?.goal_id;
+              return (
+                <button
+                  key={goal.goal_id}
+                  className="wn-goal-pick"
+                  aria-current={isSel ? 'true' : 'false'}
+                  onClick={() => setSelectedId(goal.goal_id)}
+                >
+                  <span className="wn-goal-top">
+                    <span className="wn-goal-name">
+                      {goal.goal_name}
+                      <span className={`wn-badge ${m.cls}`}>{m.label}</span>
+                    </span>
+                  </span>
+                  <span className="wn-progress">
+                    <span className="wn-progress-track">
+                      <span className={`wn-progress-fill ${m.fill}`} style={{ width: `${pct}%` }} />
+                    </span>
+                    <span className="wn-progress-pct">{pct.toFixed(0)}%</span>
+                  </span>
+                  <span className="wn-goal-meta">
+                    <span>{formatINR(goal.current_amount)} of {formatINR(goal.target_amount)}</span>
+                    {goal.target_date && <span>by {formatDate(goal.target_date)}</span>}
+                  </span>
+                </button>
+              );
+            })}
+
+            {goalsMeta?.total_required_monthly_saving != null && (
+              <p className="wn-section-note" style={{ lineHeight: 1.55 }}>
+                All goals together need {formatINR(goalsMeta.total_required_monthly_saving)}/mo
+                against {formatINR(goalsMeta.monthly_savings_basis)}/mo available
+                {goalsMeta.all_goals_affordable ? '.' : ` — ${formatINR(goalsMeta.combined_monthly_shortfall)}/mo short.`}
+              </p>
+            )}
+          </section>
+
+          {/* ---- Goal detail ---- */}
+          {selected && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--wn-s5)', minWidth: 0 }}>
+
+              <section className="wn-panel wn-enter wn-enter-2" aria-label={`${selected.goal_name} detail`}>
+                <div className="wn-section-head">
+                  <h2 className="wn-section-title" style={{ fontSize: '17px' }}>
+                    {selected.goal_name}
+                  </h2>
+                  <span className={`wn-badge ${meta.cls}`}>{meta.label}</span>
+                </div>
+
+                <p className="wn-action-why" style={{ margin: 'var(--wn-s2) 0 var(--wn-s4)' }}>
+                  {selected.status_reason}
+                </p>
+
+                <div className="wn-progress" style={{ marginBottom: 'var(--wn-s4)' }}>
+                  <div className="wn-progress-track" style={{ height: '8px' }}>
+                    <div className={`wn-progress-fill ${meta.fill}`}
+                         style={{ width: `${Math.min(100, Math.max(0, selected.progress_percent ?? 0))}%` }} />
+                  </div>
+                  <span className="wn-progress-pct">{(selected.progress_percent ?? 0).toFixed(0)}%</span>
+                </div>
+
+                <div className="wn-stats">
+                  <div className="wn-stat">
+                    <span className="wn-stat-label">Saved so far</span>
+                    <span className="wn-stat-value">{formatINR(selected.current_amount)}</span>
+                    <span className="wn-stat-sub">of {formatINR(selected.target_amount)}</span>
+                  </div>
+                  <div className="wn-stat">
+                    <span className="wn-stat-label">Still to go</span>
+                    <span className="wn-stat-value">{formatINR(selected.amount_remaining)}</span>
+                    {selected.target_date && (
+                      <span className="wn-stat-sub">by {formatDate(selected.target_date)}</span>
+                    )}
+                  </div>
+                  <div className="wn-stat">
+                    <span className="wn-stat-label">Needs per month</span>
+                    <span className="wn-stat-value">
+                      {selected.required_monthly_saving == null ? '—' : formatINR(selected.required_monthly_saving)}
+                    </span>
+                    <span className="wn-stat-sub">
+                      you save {formatINR(selected.monthly_savings_basis)}/mo
+                    </span>
+                  </div>
+                  <div className="wn-stat wn-stat-quiet">
+                    <span className="wn-stat-label">Expected completion</span>
+                    <span className="wn-stat-value">
+                      {selected.projected_completion_date ? formatDate(selected.projected_completion_date) : '—'}
+                    </span>
+                    <span className="wn-stat-sub">at your current rate</span>
+                  </div>
+                </div>
+
+                <div className="wn-head-actions" style={{ marginTop: 'var(--wn-s4)' }}>
+                  {editingId === selected.goal_id ? (
+                    <>
+                      <label className="wn-stat-label" htmlFor="goal-progress-input">Amount saved</label>
+                      <input
+                        id="goal-progress-input"
+                        className="wn-field" type="number" min="0" autoFocus
+                        style={{ width: '140px' }}
+                        value={editValue}
+                        onChange={e => setEditValue(e.target.value)}
+                      />
+                      <Button tier="primary" onClick={() => saveProgress(selected.goal_id)}><Check size={13} strokeWidth={2} style={{ marginRight: 6, flexShrink: 0 }} aria-hidden="true" />
+                        Save
+                      </Button>
+                      <Button tier="secondary" onClick={() => setEditingId(null)}>Cancel</Button>
+                    </>
+                  ) : (
+                    <button
+                      className="wn-link"
+                      onClick={() => { setEditingId(selected.goal_id); setEditValue(String(selected.current_amount ?? 0)); }}
+                    >
+                      Update amount saved
+                    </button>
+                  )}
+                </div>
+              </section>
+
+              {/* ---- What-if ---- */}
+              <section className="wn-panel wn-enter wn-enter-3" aria-label="What-if scenario">
+                <div className="wn-section-head">
+                  <h2 className="wn-section-title">What if you saved more?</h2>
+                  {simulating && <span className="wn-section-note">updating…</span>}
+                </div>
+
+                <div style={{ marginTop: 'var(--wn-s4)' }}>
+                  <div className="wn-section-head" style={{ marginBottom: 'var(--wn-s3)' }}>
+                    <span className="wn-stat-label">Extra saving each month</span>
+                    <span className="wn-goal-amount" style={{ color: 'var(--state-verified)', fontWeight: 600 }}>
+                      {extra === 0 ? 'No change' : `+${formatINR(extra)}`}
+                    </span>
+                  </div>
+
+                  <div className="wn-presets" role="group" aria-label="Extra monthly saving">
+                    {PRESETS.map(amt => (
+                      <button
+                        key={amt}
+                        className="wn-preset"
+                        aria-pressed={extra === amt}
+                        onClick={() => setExtra(amt)}
+                      >
+                        {amt === 0 ? 'No change' : `+${formatINR(amt)}`}
+                      </button>
+                    ))}
+                  </div>
+
+                  <input
+                    className="wn-range"
+                    type="range" min="0" max="50000" step="500"
+                    value={extra}
+                    onChange={e => setExtra(Number(e.target.value))}
+                    aria-label="Extra monthly saving amount"
+                    style={{ marginTop: 'var(--wn-s4)' }}
+                  />
+                  <div className="wn-range-scale">
+                    <span>₹0</span><span>₹25,000</span><span>₹50,000</span>
+                  </div>
+                </div>
+
+                {simError && (
+                  <div className="wn-note wn-note-error" role="alert" style={{ marginTop: 'var(--wn-s4)' }}>
+                    <AlertCircle size={15} /><span>{simError}</span>
+                  </div>
+                )}
+
+                {gp && (
+                  <>
+                    <div className="wn-compare" style={{ marginTop: 'var(--wn-s5)' }}>
+                      <div className="wn-compare-side">
+                        <span className="wn-compare-label">Current plan</span>
+                        <span className="wn-compare-value">{formatINR(sim.current_monthly_savings)}/mo</span>
+                        <span className="wn-compare-note">
+                          Goal reached {formatDate(gp.baseline_projected_date)}
+                        </span>
+                      </div>
+                      <div className="wn-compare-arrow" aria-hidden="true">
+                        <ArrowRight size={18} />
+                      </div>
+                      <div className="wn-compare-side is-scenario">
+                        <span className="wn-compare-label">Your scenario</span>
+                        <span className="wn-compare-value">{formatINR(sim.new_monthly_savings)}/mo</span>
+                        <span className="wn-compare-note">
+                          Goal reached {formatDate(gp.new_projected_date)}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="wn-result">
+                      <span className="wn-result-label">Result</span>
+                      <p className="wn-result-text">
+                        {extra > 0
+                          ? `You could reach ${selected.goal_name} ${gp.months_saved_label}.`
+                          : 'This is your current plan, with no extra saving applied.'}
+                      </p>
+                      <p className="wn-compare-note" style={{ marginTop: 'var(--wn-s2)' }}>
+                        {formatINR(gp.goal_gap)} still to save · projected balance in {months} months{' '}
+                        {formatINR(sim.projected_balance)}
+                      </p>
+                    </div>
+
+                    <details className="wn-disclose">
+                      <summary>
+                        How this is calculated
+                        <ChevronDown size={13} className="wn-chev" aria-hidden="true" />
+                      </summary>
+                      <div className="wn-disclose-body">
+                        <p className="wn-assume">
+                          <span className="wn-prov wn-prov-calc">Calculation</span>
+                          Projected balance is your current balance plus
+                          ({formatINR(sim.current_monthly_savings)} baseline + {formatINR(extra)} extra)
+                          × {months} months. No interest or investment growth is applied.
+                        </p>
+                        <p className="wn-assume">
+                          <span className="wn-prov wn-prov-projection">Projection</span>
+                          Goal dates assume the whole monthly saving goes to this goal.
+                        </p>
+                        {sim.assumptions?.map((a, i) => (
+                          <p className="wn-assume" key={i}>{a}</p>
+                        ))}
+                      </div>
+                    </details>
+
+                    <div style={{ marginTop: 'var(--wn-s4)' }}>
+                      <label className="wn-stat-label" htmlFor="horizon">
+                        Projection period — {months} months
+                      </label>
+                      <input
+                        id="horizon"
+                        className="wn-range"
+                        type="range" min="1" max="60" step="1"
+                        value={months}
+                        onChange={e => setMonths(Number(e.target.value))}
+                        style={{ marginTop: 'var(--wn-s2)' }}
+                      />
+                      <div className="wn-range-scale">
+                        <span>1 mo</span><span>30 mo</span><span>60 mo</span>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </section>
+
+              {/* ---- Actions ---- */}
+              <section className="wn-panel wn-enter wn-enter-3" aria-label="Ways to get there sooner">
+                <div className="wn-section-head">
+                  <h2 className="wn-section-title">Ways to get there sooner</h2>
+                  {actions?.risk_label && (
+                    <span className="wn-section-note">{actions.risk_label} approach</span>
+                  )}
+                </div>
+
+                {actionsLoading && <p className="wn-section-note" style={{ padding: 'var(--wn-s4) 0' }}>Looking for opportunities…</p>}
+
+                {!actionsLoading && actions?.recommendations?.length > 0 && (
+                  <>
+                    {actions.recommendations.map((a, i) => (
+                      <div className="wn-action" key={i}>
+                        <span className="wn-action-title">{a.action}</span>
+                        <span className="wn-action-why">{a.why}</span>
+                        <div className="wn-action-impact">
+                          {a.monthly_saving > 0 && (
+                            <span>Saves <strong className="wn-pos">{formatINR(a.monthly_saving)}</strong>/mo</span>
+                          )}
+                          {a.annual_saving > 0 && (
+                            <span><strong className="wn-pos">{formatINR(a.annual_saving)}</strong>/yr</span>
+                          )}
+                          {a.goal_impact?.months_saved_label && (
+                            <span>Goal {a.goal_impact.months_saved_label}</span>
+                          )}
+                        </div>
+                        {a.monthly_saving > 0 && (
+                          <button
+                            className="wn-link"
+                            onClick={() => setExtra(Math.min(50000, Math.round(a.monthly_saving / 500) * 500))}
+                          >
+                            Try this in the scenario above <ArrowRight size={12} aria-hidden="true" />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                    <details className="wn-disclose">
+                      <summary>
+                        How these are chosen
+                        <ChevronDown size={13} className="wn-chev" aria-hidden="true" />
+                      </summary>
+                      <div className="wn-disclose-body">
+                        <p className="wn-assume">{actions.rule_applied}</p>
+                        {actions.assumptions?.map((a, i) => <p className="wn-assume" key={i}>{a}</p>)}
+                      </div>
+                    </details>
+                  </>
+                )}
+
+                {!actionsLoading && !actions?.recommendations?.length && (
+                  <p className="wn-action-why" style={{ padding: 'var(--wn-s4) 0' }}>
+                    No spending increases were detected last month, so there is nothing to trim right now.
+                  </p>
+                )}
+              </section>
+            </div>
+          )}
+        </div>
+      )}
+
+      {showCreate && (
+        <CreateGoalDialog
+          accounts={data?.accounts || []}
+          onClose={() => setShowCreate(false)}
+          onCreated={(id) => { setShowCreate(false); if (id) setSelectedId(id); refresh(); }}
+        />
+      )}
+    </div>
+  );
 }

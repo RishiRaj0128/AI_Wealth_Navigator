@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, X, FileText, AlertTriangle, ChevronDown, ChevronUp, RotateCcw } from 'lucide-react';
+import { Plus, X, FileText, ChevronDown, ChevronUp, RotateCcw, AlertTriangle } from 'lucide-react';
 import {
   uploadFinancialDocument, fetchFinancialDocuments, fetchFinancialSummary,
   fetchFinancialTransactions, askCopilot, fetchCopilotRuns, fetchCopilotRun,
@@ -10,11 +10,11 @@ import { Metric, Button, Chip, Skeleton } from '../primitives';
 import { usePrefersReducedMotion } from '../hooks/useMotionGuards';
 
 const SUGGESTED_QUESTIONS = [
-  "Find unusual transactions",
-  "Why did spending increase?",
-  "Compare this month vs last month",
-  "Find recurring payments",
-  "Explain my largest charges"
+  "How am I doing financially?",
+  "How can I reach my car goal faster?",
+  "What if I save \u20b95,000 more every month?",
+  "Where can I cut back?",
+  "Am I on track for my goals?"
 ];
 
 const DOC_TYPE_OPTIONS = [
@@ -30,10 +30,17 @@ const DOC_TYPE_OPTIONS = [
 const STATUS_TONE = { ready: 'verified', processing: 'accent', partial: 'medium', failed: 'critical' };
 const STATUS_LABEL = { ready: 'Ready', processing: 'Processing', partial: 'Ready — search only', failed: 'Failed' };
 
+// Single rupee formatter for this view. Returns an em dash rather than
+// '\u20b90' for a missing value, so an absent number never reads as a real zero.
+const fmtINR = (n) =>
+  n == null || Number.isNaN(Number(n))
+    ? '\u2014'
+    : `\u20b9${Number(n).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
+
 const LOADING_PHASES = [
-  "Analyzing your financial data…",
-  "Retrieving relevant evidence…",
-  "Preparing your answer…"
+  "Reading your financial position…",
+  "Checking your goals and spending…",
+  "Working out what this means…"
 ];
 
 // Intentional loading, not a generic spinner: a small status line + a
@@ -64,23 +71,145 @@ function AnswerLoading() {
 // answer as the lede, then labeled evidence sections separated by
 // whitespace/dividers, matching the rest of this system's card-free
 // composition rather than nested boxes-within-a-box.
-function AnswerBody({ report, incidents, onSelectIncident, onViewTransactions }) {
-  const matchedIncidentFor = (merchant) => {
-    if (!merchant || !incidents) return null;
-    const lower = merchant.toLowerCase();
-    return incidents.find(inc => inc.target_entity_id && inc.target_entity_id.toLowerCase().includes(lower)) || null;
-  };
+function AnswerBody({ report, onViewTransactions }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       <div>
         {report.insufficient_evidence && (
-          <Chip tone="medium" className="cc-mb-8">Insufficient evidence</Chip>
+          <Chip tone="medium" className="cc-mb-8">Not enough information</Chip>
         )}
         <p style={{ fontSize: '17px', lineHeight: '1.5', color: 'var(--cc-text-primary)', margin: '6px 0 0', fontWeight: 550 }}>
           {report.answer}
         </p>
       </div>
+
+      {/* Financial position — the facts the rest of the answer rests on. */}
+      {report.financial_position && (
+        report.financial_position.current_balance != null ||
+        report.financial_position.monthly_savings != null
+      ) && (
+        <div>
+          <p className="cc-section-eyebrow" style={{ marginBottom: '10px' }}>Your position</p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(128px, 1fr))', gap: '14px' }}>
+            {report.financial_position.current_balance != null && (
+              <Metric label="Balance" value={fmtINR(report.financial_position.current_balance)} />
+            )}
+            {report.financial_position.monthly_income != null && (
+              <Metric label="Income / mo" value={fmtINR(report.financial_position.monthly_income)} tone="verified" />
+            )}
+            {report.financial_position.monthly_expenses != null && (
+              <Metric label="Expenses / mo" value={fmtINR(report.financial_position.monthly_expenses)} tone="critical" />
+            )}
+            {report.financial_position.monthly_savings != null && (
+              <Metric label="Savings / mo" value={fmtINR(report.financial_position.monthly_savings)} tone="verified" />
+            )}
+            {report.financial_position.savings_rate_pct != null && (
+              <Metric label="Savings rate" value={`${report.financial_position.savings_rate_pct}%`} />
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Goal progress */}
+      {report.goal_progress?.goal_name && (
+        <div>
+          <p className="cc-section-eyebrow" style={{ marginBottom: '8px' }}>Goal progress</p>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '10px', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '14px', fontWeight: 650, color: 'var(--cc-text-primary)' }}>
+              {report.goal_progress.goal_name}
+            </span>
+            <span className="text-data">
+              {fmtINR(report.goal_progress.current_amount)} of {fmtINR(report.goal_progress.target_amount)}
+              {report.goal_progress.target_date ? ` \u00b7 by ${report.goal_progress.target_date}` : ''}
+            </span>
+          </div>
+          {report.goal_progress.target_amount > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '9px' }}>
+              <div style={{ flex: 1, height: '5px', borderRadius: '3px', background: 'rgba(255,255,255,0.07)', overflow: 'hidden' }}>
+                <div style={{
+                  width: `${Math.min(100, Math.max(0, ((report.goal_progress.current_amount || 0) / report.goal_progress.target_amount) * 100))}%`,
+                  height: '100%', borderRadius: '3px', background: 'var(--state-verified)'
+                }} />
+              </div>
+              <span className="text-data cc-numeric" style={{ fontSize: '12px', minWidth: '42px', textAlign: 'right' }}>
+                {Math.round(((report.goal_progress.current_amount || 0) / report.goal_progress.target_amount) * 100)}%
+              </span>
+            </div>
+          )}
+          {report.goal_progress.remaining_needed != null && (
+            <p className="text-data" style={{ marginTop: '7px' }}>
+              {fmtINR(report.goal_progress.remaining_needed)} still to go
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Scenario projection — always labelled as a projection, never a fact. */}
+      {report.scenario_projection && (
+        report.scenario_projection.projected_balance != null ||
+        report.scenario_projection.months_saved != null
+      ) && (
+        <div>
+          <p className="cc-section-eyebrow" style={{ marginBottom: '10px' }}>What-if projection</p>
+          <div style={{
+            display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '14px',
+            padding: '14px', borderRadius: 'var(--r-sm)',
+            background: 'rgba(99, 102, 241, 0.06)', border: '1px solid rgba(99, 102, 241, 0.2)'
+          }}>
+            {report.scenario_projection.monthly_extra_savings != null && (
+              <Metric label="Extra saving" value={`+${fmtINR(report.scenario_projection.monthly_extra_savings)}/mo`} tone="verified" />
+            )}
+            {report.scenario_projection.projection_months != null && (
+              <Metric label="Horizon" value={`${report.scenario_projection.projection_months} mo`} />
+            )}
+            {report.scenario_projection.projected_balance != null && (
+              <Metric label="Projected balance" value={fmtINR(report.scenario_projection.projected_balance)} />
+            )}
+            {report.scenario_projection.months_saved != null && (
+              <Metric label="Goal impact" value={String(report.scenario_projection.months_saved)} />
+            )}
+            {report.scenario_projection.projected_completion_date && (
+              <Metric label="Projected completion" value={report.scenario_projection.projected_completion_date} />
+            )}
+          </div>
+          <p style={{ fontSize: '11px', color: 'var(--cc-text-tertiary)', margin: '8px 0 0' }}>
+            A projection under the assumptions listed below — not a guaranteed outcome.
+          </p>
+        </div>
+      )}
+
+      {/* Next best actions */}
+      {report.next_best_actions?.length > 0 && (
+        <div>
+          <p className="cc-section-eyebrow" style={{ marginBottom: '10px' }}>Next best actions</p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {report.next_best_actions.map((a, i) => (
+              <div key={i} style={{ paddingBottom: '11px', borderBottom: '1px solid var(--line-hair)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '13.5px', fontWeight: 650, color: 'var(--cc-text-primary)' }}>
+                    {a.action}
+                  </span>
+                  {a.category && <Chip>{a.category}</Chip>}
+                </div>
+                <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', marginTop: '7px', fontSize: '12px' }}>
+                  {a.current_spend != null && (
+                    <span className="text-data">Now {fmtINR(a.current_spend)}/mo</span>
+                  )}
+                  {a.monthly_saving != null && (
+                    <span className="text-data">
+                      Frees <strong style={{ color: 'var(--state-verified)' }}>{fmtINR(a.monthly_saving)}</strong>/mo
+                    </span>
+                  )}
+                  {a.goal_impact && (
+                    <span style={{ color: 'var(--cc-accent)' }}>{a.goal_impact}</span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {report.primary_drivers?.length > 0 && (
         <div>
@@ -108,7 +237,6 @@ function AnswerBody({ report, incidents, onSelectIncident, onViewTransactions })
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             {report.notable_transactions.map((t, i) => {
-              const matched = matchedIncidentFor(t.merchant);
               return (
                 <div key={i} style={{ paddingBottom: '10px', borderBottom: '1px solid var(--line-hair)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
@@ -116,15 +244,6 @@ function AnswerBody({ report, incidents, onSelectIncident, onViewTransactions })
                     <span className="text-data" style={{ color: 'var(--sev-critical)', fontWeight: 700 }}>₹{Number(t.amount).toLocaleString('en-IN')}</span>
                   </div>
                   <div className="text-data" style={{ marginTop: '2px' }}>{t.date} · {t.reason}</div>
-                  {matched && (
-                    <button
-                      onClick={() => onSelectIncident && onSelectIncident(matched)}
-                      data-cursor="hover"
-                      style={{ marginTop: '8px', display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'none', border: '1px solid var(--sev-critical)', color: 'var(--sev-critical)', fontSize: '11px', fontWeight: 600, padding: '4px 10px', borderRadius: 'var(--r-sm)', cursor: 'pointer' }}>
-                      <AlertTriangle size={11} strokeWidth={2} />
-                      Related MoneyOps incident found — open investigation
-                    </button>
-                  )}
                 </div>
               );
             })}
@@ -134,7 +253,7 @@ function AnswerBody({ report, incidents, onSelectIncident, onViewTransactions })
 
       {report.evidence?.length > 0 && (
         <div>
-          <p className="cc-section-eyebrow" style={{ marginBottom: '8px' }}>Evidence</p>
+          <p className="cc-section-eyebrow" style={{ marginBottom: '8px' }}>Where this came from</p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {report.evidence.map((e, i) => (
               <div key={i} style={{ fontSize: '12px', color: 'var(--cc-text-tertiary)', display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
@@ -151,9 +270,28 @@ function AnswerBody({ report, incidents, onSelectIncident, onViewTransactions })
         </div>
       )}
 
+      {report.assumptions?.length > 0 && (
+        <div style={{
+          padding: '14px 16px', borderRadius: 'var(--r-sm)',
+          background: 'rgba(59, 130, 246, 0.06)', border: '1px solid rgba(59, 130, 246, 0.22)'
+        }}>
+          <p className="cc-section-eyebrow" style={{ marginBottom: '8px', color: '#93c5fd' }}>
+            Assumptions behind this answer
+          </p>
+          <ul style={{ margin: 0, paddingLeft: '18px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            {report.assumptions.map((a, i) => (
+              <li key={i} style={{ fontSize: '12px', color: 'var(--cc-text-tertiary)', lineHeight: 1.55 }}>{a}</li>
+            ))}
+          </ul>
+          <p style={{ fontSize: '11px', color: 'var(--cc-text-tertiary)', margin: '10px 0 0', lineHeight: 1.5 }}>
+            Synthetic planning model for demonstration — not regulated financial advice.
+          </p>
+        </div>
+      )}
+
       {report.sources_consulted?.length > 0 && (
         <div>
-          <p className="cc-section-eyebrow" style={{ marginBottom: '8px' }}>Sources consulted</p>
+          <p className="cc-section-eyebrow" style={{ marginBottom: '8px' }}>Documents used</p>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
             {report.sources_consulted.map((s, i) => (
               <Chip key={i}>
@@ -168,7 +306,7 @@ function AnswerBody({ report, incidents, onSelectIncident, onViewTransactions })
   );
 }
 
-export default function FinancialCopilotView({ incidents, onSelectIncident }) {
+export default function FinancialCopilotView({ aiStatus, refreshToken = 0 }) {
   const prefersReducedMotion = usePrefersReducedMotion();
   const [summary, setSummary] = useState(null);
   const [documents, setDocuments] = useState([]);
@@ -203,6 +341,20 @@ export default function FinancialCopilotView({ incidents, onSelectIncident }) {
 
   const conversationEndRef = useRef(null);
 
+  // financial_analysis_runs is shared with the inherited operations Copilot
+  // and still contains payment-operations questions from before this became a
+  // personal-finance product. Those records are preserved (the Platform
+  // tooling can still read them) but they are not this user's wealth history,
+  // so they are excluded here instead of being shown as "recent questions".
+  const LEGACY_RUN_TERMS = [
+    'incident', 'gateway', 'merchant', 'razorpay', 'webhook', 'refund',
+    'payment failure', 'settlement', 'money graph', 'incident-lab', 'incident lab',
+  ];
+  const visibleRuns = runs.filter(r => {
+    const q = (r.query || '').toLowerCase();
+    return !LEGACY_RUN_TERMS.some(term => q.includes(term));
+  });
+
   const loadAll = useCallback(async () => {
     try {
       const [s, docs, runHistory] = await Promise.all([
@@ -218,7 +370,7 @@ export default function FinancialCopilotView({ incidents, onSelectIncident }) {
     }
   }, []);
 
-  useEffect(() => { loadAll(); }, [loadAll]);
+  useEffect(() => { loadAll(); }, [loadAll, refreshToken]);
 
   useEffect(() => {
     conversationEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
@@ -367,20 +519,32 @@ export default function FinancialCopilotView({ incidents, onSelectIncident }) {
     <div className="cc-page">
 
       {/* PAGE CONTEXT */}
-      <div className="cc-page-header" style={{ maxWidth: 'none', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: '16px' }}>
+      <div className="wn-head" style={{ maxWidth: 'none' }}>
         <div style={{ maxWidth: 640 }}>
-          <p className="cc-section-eyebrow" style={{ color: 'var(--cc-accent)' }}>Financial Intelligence Copilot</p>
-          <h1 className="text-page-title">What are we investigating?</h1>
-          <p className="cc-page-desc">
-            Hybrid retrieval over your uploaded statements and policies — structured PostgreSQL analytics,
-            document RAG, and Gemini reasoning, always grounded in real evidence.
+          <h1 className="wn-head-title">Wealth AI</h1>
+          <p className="wn-head-sub">
+            Ask anything about your financial plan. Answers are grounded in your own accounts,
+            transactions and goals — every figure is calculated, never guessed.
           </p>
         </div>
-        <Button tier="primary" onClick={() => setShowUpload(v => !v)}>
+        <div className="wn-head-actions">
+        <Button tier="secondary" onClick={() => setShowUpload(v => !v)}>
           <Plus size={13} strokeWidth={2} style={{ marginRight: 6 }} />
-          Upload financial data
+          Upload a statement
         </Button>
+        </div>
       </div>
+
+      {aiStatus && aiStatus.configured === false && (
+        <div className="wn-note wn-note-warn" role="status">
+          <AlertTriangle size={15} />
+          <span>
+            The AI assistant is currently unavailable — no API key is configured. Your financial
+            position, goals, scenarios and recommendations all still work and remain fully
+            calculated by the app.
+          </span>
+        </div>
+      )}
 
       {showUpload && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '14px', alignItems: 'flex-end', padding: '16px 0', borderTop: '1px solid var(--line-hair)', borderBottom: '1px solid var(--line-hair)' }}>
@@ -413,19 +577,18 @@ export default function FinancialCopilotView({ incidents, onSelectIncident }) {
 
       {/* CONNECTED DATA — hierarchy, not four identical boxes */}
       <div className="cc-metric-band">
-        <Metric size="lg" label="Total volume" value={`₹${(summary?.total_volume_inr ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`} sub="Across all transactions" />
+        <Metric size="lg" label="Current balance" value={fmtINR(summary?.position?.current_balance)} sub={summary?.position?.balance_as_of ? `as of ${summary.position.balance_as_of}` : 'from your statements'} />
         <div className="cc-metric-band-divider" />
-        <Metric size="lg" label="Transactions" value={(summary?.transactions ?? 0).toLocaleString('en-IN')} sub="Structured, in PostgreSQL" />
+        <Metric size="lg" label="Transactions" value={(summary?.transactions ?? 0).toLocaleString('en-IN')} sub="from your statements" />
         <div className="cc-metric-band-divider" />
-        <Metric size="sm" label="Documents" value={summary?.documents ?? 0} sub={`${summary?.documents_ready ?? 0} ready for retrieval`} />
+        <Metric size="sm" label="Documents" value={summary?.documents ?? 0} sub={`${summary?.documents_ready ?? 0} ready`} />
         <div className="cc-metric-band-divider" />
-        <Metric size="sm" label="Accounts" value={summary?.accounts ?? 0} sub="Derived from uploads" />
+        <Metric size="sm" label="Accounts" value={summary?.accounts ?? 0} sub="linked" />
       </div>
 
       {/* DOCUMENT LIBRARY — source material index, not icon cards */}
       <section>
-        <p className="cc-section-eyebrow" style={{ marginBottom: '4px' }}>Context</p>
-        <h2 className="text-card-title" style={{ margin: '0 0 12px' }}>Connected documents</h2>
+        <h2 className="text-card-title" style={{ margin: '0 0 12px' }}>Your statements</h2>
         {documents.length === 0 ? (
           <p style={{ fontSize: '13px', color: 'var(--cc-text-tertiary)' }}>No documents uploaded yet.</p>
         ) : (
@@ -542,13 +705,14 @@ export default function FinancialCopilotView({ incidents, onSelectIncident }) {
           content (lede + labeled evidence sections), matching the brief's
           "question -> investigation result -> evidence -> action" hierarchy. */}
       <section>
-        <p className="cc-section-eyebrow" style={{ marginBottom: '4px' }}>Investigate</p>
-        <h2 className="text-card-title" style={{ margin: '0 0 16px' }}>Ask a question</h2>
+        <h2 className="wn-section-title" style={{ margin: '0 0 16px', fontSize: '17px' }}>
+          Ask a question
+        </h2>
 
         {conversation.length === 0 && (
           <div style={{ padding: '4px 0 24px' }}>
             <p style={{ margin: '0 0 14px', fontSize: '13px', color: 'var(--cc-text-tertiary)' }}>
-              Ask something specific — the Copilot reasons over structured PostgreSQL analytics and your uploaded documents together.
+              Try one of these, or ask your own question about spending, savings or goals.
             </p>
             <div className="cc-suggestion-list">
               {SUGGESTED_QUESTIONS.map(q => (
@@ -577,7 +741,10 @@ export default function FinancialCopilotView({ incidents, onSelectIncident }) {
                 <div style={{ borderTop: '1px solid var(--line-hair)', paddingTop: '16px' }}>
                   {turn.status === 'loading' && <AnswerLoading />}
                   {turn.status === 'error' && (
-                    <p style={{ color: 'var(--sev-critical)', fontSize: '13px', margin: 0 }}><strong>Copilot notice:</strong> {turn.error}</p>
+                    <div className="wn-note wn-note-error" role="alert">
+                      <AlertTriangle size={15} />
+                      <span>{turn.error}</span>
+                    </div>
                   )}
                   {turn.status === 'done' && turn.report && (
                     <motion.div
@@ -585,7 +752,7 @@ export default function FinancialCopilotView({ incidents, onSelectIncident }) {
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
                     >
-                      <AnswerBody report={turn.report} incidents={incidents} onSelectIncident={onSelectIncident} onViewTransactions={handleViewTransactions} />
+                      <AnswerBody report={turn.report} onViewTransactions={handleViewTransactions} />
                     </motion.div>
                   )}
                 </div>
@@ -602,11 +769,11 @@ export default function FinancialCopilotView({ incidents, onSelectIncident }) {
             value={query}
             onChange={e => setQuery(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') handleAsk(); }}
-            placeholder="Ask about your financial data…"
+            placeholder="What would you like to understand?"
             disabled={asking}
             style={{ flex: 1, minWidth: '260px', padding: '13px 16px', borderRadius: 'var(--r-md)', background: 'var(--ink-raised)', border: '1px solid var(--line-solid)', color: 'var(--cc-text-primary)', fontSize: '14px' }}
           />
-          <Button tier="primary" onClick={() => handleAsk()} disabled={!query.trim()} state={asking ? 'loading' : 'idle'} loadingLabel="Investigating">
+          <Button tier="primary" onClick={() => handleAsk()} disabled={!query.trim()} state={asking ? 'loading' : 'idle'} loadingLabel="Thinking">
             Ask
           </Button>
         </div>
@@ -664,12 +831,13 @@ export default function FinancialCopilotView({ incidents, onSelectIncident }) {
       {/* RUN HISTORY — expandable/collapsible preview only. Expanding a row
           NEVER touches the active conversation above and NEVER calls Gemini;
           it only reads the already-stored financial_analysis_runs record. */}
-      {runs.length > 0 && (
+      {visibleRuns.length > 0 && (
         <section>
-          <p className="cc-section-eyebrow" style={{ marginBottom: '4px' }}>History</p>
-          <h2 className="text-card-title" style={{ margin: '0 0 12px' }}>Recent investigations</h2>
+          <h2 className="wn-section-title" style={{ margin: '0 0 12px', fontSize: '17px' }}>
+            Recent questions
+          </h2>
           <div className="cc-row-list">
-            {runs.map(r => {
+            {visibleRuns.map(r => {
               const isExpanded = expandedHistoryIds.has(r.run_id);
               const detail = historyDetailCache[r.run_id];
               const isLoadingDetail = historyLoadingId === r.run_id;
@@ -710,7 +878,7 @@ export default function FinancialCopilotView({ incidents, onSelectIncident }) {
                           )}
                           {!isLoadingDetail && detail && !detail.isError && detail.report && (
                             <>
-                              <AnswerBody report={detail.report} incidents={incidents} onSelectIncident={onSelectIncident} onViewTransactions={handleViewTransactions} />
+                              <AnswerBody report={detail.report} onViewTransactions={handleViewTransactions} />
                               <Button tier="ghost" onClick={() => handleContinueInvestigation(r.run_id)} className="cc-mt-14">
                                 <RotateCcw size={12} strokeWidth={2} style={{ marginRight: 6 }} />
                                 Continue this investigation

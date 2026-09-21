@@ -1,6 +1,20 @@
-const API_BASE = typeof window !== 'undefined' && window.location.hostname === '127.0.0.1' 
-  ? 'http://127.0.0.1:8000/api' 
-  : 'http://localhost:8000/api';
+// Where the API lives.
+//
+// This was previously hardcoded to localhost:8000, which works for local
+// development and breaks on any deployed environment. VITE_API_BASE is baked
+// in at build time (Vite inlines import.meta.env), so a container build passes
+// it as a build argument:
+//
+//   docker build --build-arg VITE_API_BASE=https://api.example.com/api ...
+//
+// With no value set, the local development default is preserved exactly,
+// including matching the host the page was opened on so that 127.0.0.1 and
+// localhost do not become a cross-origin pair.
+const API_BASE =
+  import.meta.env.VITE_API_BASE ||
+  (typeof window !== 'undefined' && window.location.hostname === '127.0.0.1'
+    ? 'http://127.0.0.1:8000/api'
+    : 'http://localhost:8000/api');
 
 
 export async function fetchHealth() {
@@ -307,8 +321,13 @@ export async function askCopilot(query) {
   return res.json();
 }
 
-export async function fetchCopilotRuns(limit = 20) {
-  const res = await fetch(`${API_BASE}/financial/copilot/runs?limit=${limit}`);
+// `surface` defaults to 'wealth' so the Wealth AI tab shows only questions
+// asked of this product. Runs from the inherited operations Copilot are still
+// stored and still returned when the parameter is omitted.
+export async function fetchCopilotRuns(limit = 20, surface = 'wealth') {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (surface) params.append('surface', surface);
+  const res = await fetch(`${API_BASE}/financial/copilot/runs?${params.toString()}`);
   if (!res.ok) throw new Error("Failed to fetch Copilot run history");
   return res.json();
 }
@@ -390,12 +409,27 @@ export async function simulateGoalScenario(goalId, monthlyExtraSavings, months =
   return res.json();
 }
 
-export async function fetchGoalRecommendations(goalId) {
-  const res = await fetch(`${API_BASE}/financial/goals/${goalId}/recommendations`);
+export async function fetchGoalRecommendations(goalId, riskPreference = null) {
+  const params = new URLSearchParams();
+  if (riskPreference) params.append("risk_preference", riskPreference);
+  const qs = params.toString();
+  const res = await fetch(`${API_BASE}/financial/goals/${goalId}/recommendations${qs ? `?${qs}` : ""}`);
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.detail || "Failed to fetch recommendations");
   }
+  return res.json();
+}
+
+// The user's deterministic financial position — balance, monthly income,
+// expenses, savings and savings rate. Every one of these numbers is computed
+// by the backend position engine, never in the browser and never by the model.
+export async function fetchFinancialPosition(accountId = null, months = 3) {
+  const params = new URLSearchParams();
+  if (accountId) params.append("account_id", accountId);
+  if (months) params.append("months", String(months));
+  const res = await fetch(`${API_BASE}/financial/position?${params.toString()}`);
+  if (!res.ok) throw new Error("Failed to fetch financial position");
   return res.json();
 }
 

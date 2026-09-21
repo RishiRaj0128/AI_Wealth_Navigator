@@ -1,0 +1,43 @@
+# Keep the build context small and free of secrets.
+
+.git
+.gitignore
+
+# Secrets — never copied into an image.
+.env
+.env.*
+*.env
+!.env.example
+
+# Python
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Node / frontend build artefacts (the frontend has its own image)
+node_modules/
+frontend/node_modules/
+frontend/dist/
+.npm
+.vite/
+
+# Local data and scratch
+backend/data/
+scratch/
+*.log
+*.db
+*.sqlite
+*.sqlite3
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Archived legacy tests are not needed at runtime
+archive/

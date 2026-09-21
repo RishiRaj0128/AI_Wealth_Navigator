@@ -49,3 +49,12 @@ Thumbs.db
 # Claude Context
 CLAUDE.md
 *.md
+# --- Documentation and example config are intentionally tracked -------------
+# The blanket `*.md` rule above exists to keep scratch notes out of the repo,
+# and `.env.*` to keep real secrets out. These specific files carry no secrets
+# and are part of the deliverable, so they are re-included explicitly.
+!README.md
+!docs/
+!docs/*.md
+!.env.example
+!backend/.env.example

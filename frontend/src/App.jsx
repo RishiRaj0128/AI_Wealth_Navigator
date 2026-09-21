@@ -4,6 +4,8 @@ import RouteProgress from './components/RouteProgress';
 import PageTransition from './components/PageTransition';
 import CustomCursor from './components/CustomCursor';
 import OverviewView from './components/OverviewView';
+import FinancialHealthView from './components/FinancialHealthView';
+import MyDataView from './components/MyDataView';
 import DataView from './components/DataView';
 import InvestigationView from './components/InvestigationView';
 import FinancialCopilotView from './components/FinancialCopilotView';
@@ -19,8 +21,15 @@ import {
   triggerAnomalyDetection
 } from './api';
 
+// The four tabs that are the product. Everything else is inherited
+// operations tooling reached through the header's Platform menu.
+const WEALTH_TABS = ['overview', 'goals', 'copilot', 'mydata'];
+
 export default function App() {
-  const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'data' | 'investigation' | 'copilot' | 'audit'
+  // Primary journey: 'overview' (Financial Health) -> 'goals' -> 'copilot' -> 'mydata'.
+  // Inherited operations tooling ('incidents' | 'data' | 'investigation' | 'audit')
+  // is reachable only via the header's Platform menu.
+  const [activeTab, setActiveTab] = useState('overview');
 
   const [health, setHealth] = useState(null);
   const [stats, setStats] = useState(null);
@@ -29,6 +38,10 @@ export default function App() {
   const [incidents, setIncidents] = useState([]);
   const [selectedIncident, setSelectedIncident] = useState(null);
   const [isDetecting, setIsDetecting] = useState(false);
+  // Incremented by the header Refresh. Every wealth page takes this as a
+  // dependency, so one control refreshes whatever the user is looking at.
+  const [refreshToken, setRefreshToken] = useState(0);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [notification, setNotification] = useState(null);
 
   // Custom-cursor preference (shell, Phase 2): defaults on, persisted
@@ -109,11 +122,32 @@ export default function App() {
     }
   };
 
+  // One handler behind the header Refresh: re-fetch the shell's own state
+  // (health, AI availability) AND signal every mounted page to reload. The
+  // in-flight guard stops rapid clicks from stacking requests.
+  const handleRefresh = async () => {
+    if (isRefreshing) return;
+    setIsRefreshing(true);
+    try {
+      await loadData();
+      setRefreshToken(t => t + 1);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
   useEffect(() => {
     loadData();
+  }, []);
+
+  // Incident polling exists for the operations screens. It is scoped to those
+  // screens rather than running forever: a personal-finance user sitting on
+  // Overview has no reason to poll an incident feed every five seconds.
+  useEffect(() => {
+    if (WEALTH_TABS.includes(activeTab)) return undefined;
     const interval = setInterval(loadData, 5000);
     return () => clearInterval(interval);
-  }, []);
+  }, [activeTab]);
 
   // Background state glow (design brief §4.3): hue follows the highest
   // severity among currently active incidents — the same `incidents` state
@@ -138,9 +172,14 @@ export default function App() {
 
   const activeGlowLayer = useRef('a');
   useEffect(() => {
+    // Severity-driven atmosphere is an operations idea: it made the whole
+    // product glow red because an unrelated payment incident was open. On the
+    // wealth pages the ambient hue is always the neutral brand accent; the
+    // severity tint survives only where it means something.
+    const isWealthRoute = WEALTH_TABS.includes(activeTab);
     const active = incidents.filter(i => i.status !== 'resolved' && i.status !== 'rejected');
     const bySeverity = ['critical', 'high', 'medium', 'low'];
-    const highest = bySeverity.find(sev => active.some(i => i.severity === sev));
+    const highest = isWealthRoute ? null : bySeverity.find(sev => active.some(i => i.severity === sev));
     const hue = highest ? `var(--sev-${highest})` : 'var(--cc-accent)';
 
     const current = activeGlowLayer.current;
@@ -171,7 +210,7 @@ export default function App() {
     activeGlowLayer.current = next;
 
     return () => { if (fadeInTimer) clearTimeout(fadeInTimer); };
-  }, [incidents]);
+  }, [incidents, activeTab]);
 
   const handleSelectAndInvestigate = async (inc) => {
     setSelectedIncident(inc);
@@ -224,11 +263,10 @@ export default function App() {
         activeTab={activeTab}
         onTabChange={setActiveTab}
         health={health}
-        stats={stats}
         aiStatus={aiStatus}
         pendingInvestigationCount={incidents.filter(i => i.status !== 'resolved' && i.status !== 'rejected').length}
-        investigatedCount={incidents.filter(i => i.status === 'resolved' || i.status === 'rejected').length}
-        onRefresh={loadData}
+        onRefresh={handleRefresh}
+        isRefreshing={isRefreshing}
         cursorEnabled={cursorEnabled}
         onToggleCursor={() => setCursorEnabled(v => !v)}
       />
@@ -263,7 +301,23 @@ export default function App() {
       {/* 3. PRIMARY WORKSPACE CONTAINER */}
       <main style={{ maxWidth: "1600px", margin: "0 auto", padding: "24px" }}>
         <PageTransition routeKey={activeTab}>
+          {/* The landing experience: the user's own financial position, goals
+              and next actions. Nothing operational appears here. */}
           {activeTab === 'overview' && (
+            <FinancialHealthView onNavigate={setActiveTab} refreshToken={refreshToken} />
+          )}
+
+          {activeTab === 'goals' && (
+            <GoalsView onNavigate={setActiveTab} refreshToken={refreshToken} />
+          )}
+
+          {activeTab === 'mydata' && (
+            <MyDataView refreshToken={refreshToken} />
+          )}
+
+          {/* Inherited operations tooling, reached only through the header's
+              Platform menu — kept working, kept out of the way. */}
+          {activeTab === 'incidents' && (
             <OverviewView
               stats={stats}
               sourceStats={sourceStats}
@@ -294,11 +348,7 @@ export default function App() {
           )}
 
           {activeTab === 'copilot' && (
-            <FinancialCopilotView incidents={incidents} onSelectIncident={handleSelectAndInvestigate} />
-          )}
-
-          {activeTab === 'goals' && (
-            <GoalsView />
+            <FinancialCopilotView aiStatus={aiStatus} refreshToken={refreshToken} />
           )}
 
           {activeTab === 'audit' && (

@@ -1704,3 +1704,717 @@ body {
   color: var(--cc-text-tertiary);
   margin-top: 2px;
 }
+
+
+/* === WEALTH NAVIGATOR SURFACE ===========================================
+   One layout/typography layer for the four primary product pages (Overview,
+   Goals, Wealth AI, Data).
+
+   Why this exists: those pages had been styled with inline hex values
+   (#10b981 emerald, #6366f1 indigo, #f59e0b amber) that belong to no palette
+   in this file. The result read as generic-AI-dashboard rather than as this
+   product. Everything below composes the tokens already defined at the top of
+   this stylesheet instead:
+
+     accent    --cc-accent      #4C6FFF   one blue, used for interaction only
+     positive  --state-verified #29D399   money in, on-track, achieved
+     warning   --sev-medium     #F5C242   attention, behind schedule
+     negative  --sev-critical   #FF4D5E   money out, overdue
+     surfaces  --ink-*                    flat, no glow, no glassmorphism
+     lines     --line-hair / --line-solid
+
+   Spacing is a strict 4 / 8 / 12 / 16 / 24 / 32 / 48 scale. Radii reuse
+   --r-sm / --r-md / --r-lg. Colour is never the only carrier of meaning: a
+   status is always a word as well as a hue.
+   ======================================================================== */
+
+:root {
+  --wn-s1: 4px;
+  --wn-s2: 8px;
+  --wn-s3: 12px;
+  --wn-s4: 16px;
+  --wn-s5: 24px;
+  --wn-s6: 32px;
+  --wn-s7: 48px;
+  --wn-maxw: 1180px;
+}
+
+/* --- Page scaffold ----------------------------------------------------- */
+
+.wn-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wn-s6);
+  max-width: var(--wn-maxw);
+  margin: 0 auto;
+  padding-bottom: var(--wn-s7);
+}
+
+.wn-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--wn-s4);
+  flex-wrap: wrap;
+}
+
+.wn-head-title {
+  font-family: var(--cc-font-ui);
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--cc-text-primary);
+  margin: 0;
+  line-height: 1.2;
+}
+
+.wn-head-sub {
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--cc-text-tertiary);
+  margin: var(--wn-s2) 0 0;
+  max-width: 62ch;
+}
+
+.wn-head-actions {
+  display: flex;
+  gap: var(--wn-s2);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* --- Sections ---------------------------------------------------------- */
+
+.wn-section { display: flex; flex-direction: column; gap: var(--wn-s3); }
+
+.wn-section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--wn-s3);
+  flex-wrap: wrap;
+}
+
+.wn-section-title {
+  font-family: var(--cc-font-ui);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--cc-text-primary);
+  margin: 0;
+}
+
+.wn-section-note {
+  font-size: 12.5px;
+  color: var(--cc-text-tertiary);
+  margin: 0;
+}
+
+/* --- Panel: the single card surface ------------------------------------ */
+
+.wn-panel {
+  background: var(--ink-base);
+  border: 1px solid var(--line-hair);
+  border-radius: var(--r-lg);
+  padding: var(--wn-s5);
+}
+
+.wn-panel-tight { padding: var(--wn-s4); }
+.wn-panel-flush { padding: 0; overflow: hidden; }
+
+.wn-grid-2 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: var(--wn-s4);
+  align-items: start;
+}
+
+/* --- Stats ------------------------------------------------------------- */
+
+.wn-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--wn-s5);
+}
+
+.wn-stat { display: flex; flex-direction: column; gap: var(--wn-s1); min-width: 0; }
+
+.wn-stat-label {
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--cc-text-tertiary);
+}
+
+.wn-stat-value {
+  font-family: var(--cc-font-data);
+  font-size: 22px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+  color: var(--cc-text-primary);
+  line-height: 1.25;
+}
+
+/* The lead figure on a page. Exactly one per screen: if every number is
+   large, hierarchy carries no information. */
+.wn-stat-lead .wn-stat-value { font-size: 30px; font-weight: 600; }
+
+/* Secondary figures (savings rate) sit quieter on purpose, so they read as
+   context rather than as another headline KPI. */
+.wn-stat-quiet .wn-stat-value { font-size: 17px; color: var(--cc-text-secondary); }
+
+.wn-stat-sub { font-size: 11.5px; color: var(--cc-text-tertiary); line-height: 1.45; }
+
+.wn-pos { color: var(--state-verified); }
+.wn-neg { color: var(--sev-critical); }
+
+/* --- Cashflow bar: income -> expenses + savings ------------------------ */
+
+.wn-flow { display: flex; flex-direction: column; gap: var(--wn-s3); }
+
+.wn-flow-track {
+  display: flex;
+  height: 10px;
+  border-radius: var(--r-full);
+  overflow: hidden;
+  background: var(--ink-sunken);
+}
+
+.wn-flow-seg { height: 100%; transition: width var(--dur-base) var(--ease-out); }
+.wn-flow-seg-spend { background: var(--sev-critical); opacity: 0.72; }
+.wn-flow-seg-save { background: var(--state-verified); opacity: 0.85; }
+
+.wn-flow-legend {
+  display: flex;
+  gap: var(--wn-s5);
+  flex-wrap: wrap;
+  font-size: 12.5px;
+  color: var(--cc-text-tertiary);
+}
+
+.wn-flow-key {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--wn-s2);
+}
+
+.wn-flow-dot { width: 8px; height: 8px; border-radius: var(--r-full); flex-shrink: 0; }
+
+/* --- Status badge ------------------------------------------------------ */
+
+.wn-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--wn-s1);
+  padding: 2px var(--wn-s2);
+  border-radius: var(--r-full);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+
+.wn-badge-good    { background: rgba(41, 211, 153, 0.12); color: var(--state-verified); border-color: rgba(41, 211, 153, 0.24); }
+.wn-badge-warn    { background: rgba(245, 194, 66, 0.12); color: var(--sev-medium);     border-color: rgba(245, 194, 66, 0.24); }
+.wn-badge-bad     { background: rgba(255, 77, 94, 0.12);  color: var(--sev-critical);   border-color: rgba(255, 77, 94, 0.24); }
+.wn-badge-neutral { background: rgba(109, 127, 142, 0.12); color: var(--cc-text-secondary); border-color: var(--line-hair); }
+
+/* --- Goal row ---------------------------------------------------------- */
+
+.wn-goal {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wn-s3);
+  padding: var(--wn-s4) 0;
+  border-bottom: 1px solid var(--line-hair);
+}
+.wn-goal:last-child { border-bottom: none; }
+
+.wn-goal-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--wn-s3);
+  flex-wrap: wrap;
+}
+
+.wn-goal-name {
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--cc-text-primary);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--wn-s2);
+}
+
+.wn-goal-amount {
+  font-family: var(--cc-font-data);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--cc-text-secondary);
+}
+
+.wn-progress {
+  display: flex;
+  align-items: center;
+  gap: var(--wn-s3);
+}
+
+.wn-progress-track {
+  flex: 1;
+  height: 6px;
+  border-radius: var(--r-full);
+  background: var(--ink-sunken);
+  overflow: hidden;
+}
+
+.wn-progress-fill {
+  height: 100%;
+  border-radius: var(--r-full);
+  background: var(--state-verified);
+  transition: width var(--dur-slow) var(--ease-out);
+}
+.wn-progress-fill.is-behind { background: var(--sev-medium); }
+.wn-progress-fill.is-late   { background: var(--sev-critical); }
+
+.wn-progress-pct {
+  font-family: var(--cc-font-data);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--cc-text-secondary);
+  min-width: 38px;
+  text-align: right;
+}
+
+.wn-goal-meta {
+  display: flex;
+  gap: var(--wn-s5);
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--cc-text-tertiary);
+}
+.wn-goal-meta strong { color: var(--cc-text-secondary); font-weight: 600; }
+
+/* Selectable goal in the Goals list. */
+.wn-goal-pick {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 1px solid var(--line-hair);
+  border-radius: var(--r-md);
+  padding: var(--wn-s4);
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-out),
+              background var(--dur-fast) var(--ease-out);
+  display: flex;
+  flex-direction: column;
+  gap: var(--wn-s3);
+  font: inherit;
+  color: inherit;
+}
+.wn-goal-pick:hover { background: var(--ink-raised); border-color: var(--line-solid); }
+.wn-goal-pick[aria-current="true"] { border-color: var(--cc-accent); background: rgba(76, 111, 255, 0.06); }
+.wn-goal-pick:focus-visible { outline: 2px solid var(--line-focus); outline-offset: 2px; }
+
+/* --- Action card ------------------------------------------------------- */
+
+.wn-action {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wn-s2);
+  padding: var(--wn-s4) 0;
+  border-bottom: 1px solid var(--line-hair);
+}
+.wn-action:last-child { border-bottom: none; }
+
+.wn-action-title { font-size: 14px; font-weight: 600; color: var(--cc-text-primary); line-height: 1.45; }
+.wn-action-why   { font-size: 12.5px; color: var(--cc-text-tertiary); line-height: 1.55; }
+
+.wn-action-impact {
+  display: flex;
+  gap: var(--wn-s5);
+  flex-wrap: wrap;
+  font-size: 12.5px;
+  color: var(--cc-text-tertiary);
+  align-items: baseline;
+}
+.wn-action-impact strong {
+  font-family: var(--cc-font-data);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+/* --- Scenario comparison ----------------------------------------------- */
+
+.wn-compare {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: var(--wn-s4);
+  align-items: stretch;
+}
+
+.wn-compare-side {
+  border: 1px solid var(--line-hair);
+  border-radius: var(--r-md);
+  padding: var(--wn-s4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--wn-s1);
+  min-width: 0;
+}
+.wn-compare-side.is-scenario { border-color: rgba(41, 211, 153, 0.35); background: rgba(41, 211, 153, 0.05); }
+
+.wn-compare-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--cc-text-tertiary);
+}
+.wn-compare-side.is-scenario .wn-compare-label { color: var(--state-verified); }
+
+.wn-compare-value {
+  font-family: var(--cc-font-data);
+  font-size: 21px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--cc-text-primary);
+}
+
+.wn-compare-note { font-size: 12px; color: var(--cc-text-tertiary); line-height: 1.5; }
+
+.wn-compare-arrow {
+  display: flex;
+  align-items: center;
+  color: var(--cc-text-disabled);
+  flex-shrink: 0;
+}
+
+.wn-result {
+  margin-top: var(--wn-s4);
+  padding: var(--wn-s4);
+  border-radius: var(--r-md);
+  border: 1px solid rgba(76, 111, 255, 0.3);
+  background: rgba(76, 111, 255, 0.06);
+}
+.wn-result-label {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.05em;
+  text-transform: uppercase; color: var(--cc-accent);
+}
+.wn-result-text {
+  font-size: 16px; font-weight: 600; color: var(--cc-text-primary);
+  margin-top: var(--wn-s2); line-height: 1.4;
+}
+
+/* --- Amount presets ---------------------------------------------------- */
+
+.wn-presets { display: flex; gap: var(--wn-s2); flex-wrap: wrap; }
+
+.wn-preset {
+  padding: 6px var(--wn-s3);
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line-hair);
+  background: transparent;
+  color: var(--cc-text-secondary);
+  font-family: var(--cc-font-ui);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-out),
+              background var(--dur-fast) var(--ease-out),
+              color var(--dur-fast) var(--ease-out);
+}
+.wn-preset:hover { border-color: var(--line-solid); color: var(--cc-text-primary); }
+.wn-preset[aria-pressed="true"] {
+  border-color: var(--cc-accent);
+  background: rgba(76, 111, 255, 0.1);
+  color: var(--cc-text-primary);
+}
+.wn-preset:focus-visible { outline: 2px solid var(--line-focus); outline-offset: 2px; }
+
+/* --- Progressive disclosure: "How this is calculated" ------------------ */
+
+.wn-disclose { border-top: 1px solid var(--line-hair); margin-top: var(--wn-s4); padding-top: var(--wn-s3); }
+.wn-disclose-sm { margin-top: var(--wn-s3); }
+
+.wn-disclose > summary {
+  cursor: pointer;
+  list-style: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--wn-s2);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--cc-text-tertiary);
+  transition: color var(--dur-fast) var(--ease-out);
+  padding: 2px 0;
+}
+.wn-disclose > summary::-webkit-details-marker { display: none; }
+.wn-disclose > summary:hover { color: var(--cc-accent); }
+.wn-disclose > summary:focus-visible { outline: 2px solid var(--line-focus); outline-offset: 3px; border-radius: var(--r-sm); }
+.wn-disclose > summary .wn-chev { transition: transform var(--dur-fast) var(--ease-out); }
+.wn-disclose[open] > summary .wn-chev { transform: rotate(180deg); }
+
+.wn-disclose-body {
+  margin-top: var(--wn-s3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--wn-s2);
+  animation: wn-disclose-in var(--dur-fast) var(--ease-out);
+}
+
+@keyframes wn-disclose-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Provenance tag: separates an observed FACT from a deterministic
+   CALCULATION from a forward-looking PROJECTION. These are genuinely
+   different kinds of claim and the product should never blur them. */
+.wn-prov {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: var(--r-sm);
+  font-family: var(--cc-font-data);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+.wn-prov-fact       { background: rgba(109, 127, 142, 0.16); color: var(--cc-text-secondary); }
+.wn-prov-calc       { background: rgba(76, 111, 255, 0.14);  color: var(--cc-accent); }
+.wn-prov-projection { background: rgba(245, 194, 66, 0.14);  color: var(--sev-medium); }
+.wn-prov-ai         { background: rgba(41, 211, 153, 0.12);  color: var(--state-verified); }
+
+.wn-assume {
+  display: flex;
+  gap: var(--wn-s2);
+  align-items: flex-start;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--cc-text-tertiary);
+}
+.wn-assume::before { content: "\2022"; color: var(--cc-text-disabled); flex-shrink: 0; }
+
+/* --- Data table -------------------------------------------------------- */
+
+.wn-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+.wn-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+
+.wn-table th {
+  text-align: left;
+  padding: var(--wn-s3) var(--wn-s4);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--cc-text-tertiary);
+  border-bottom: 1px solid var(--line-solid);
+  white-space: nowrap;
+  background: var(--ink-base);
+}
+
+.wn-table td {
+  padding: var(--wn-s3) var(--wn-s4);
+  border-bottom: 1px solid var(--line-hair);
+  color: var(--cc-text-secondary);
+  vertical-align: middle;
+}
+
+.wn-table tbody tr { transition: background var(--dur-fast) var(--ease-out); }
+.wn-table tbody tr:hover { background: var(--ink-raised); }
+.wn-table td.wn-num {
+  text-align: right;
+  font-family: var(--cc-font-data);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.wn-table td.wn-strong { color: var(--cc-text-primary); font-weight: 500; }
+
+.wn-tag {
+  display: inline-block;
+  padding: 2px var(--wn-s2);
+  border-radius: var(--r-sm);
+  background: var(--ink-hover);
+  border: 1px solid var(--line-hair);
+  font-size: 11px;
+  color: var(--cc-text-secondary);
+  white-space: nowrap;
+}
+
+.wn-pager {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--wn-s3);
+  padding: var(--wn-s3) var(--wn-s4);
+  border-top: 1px solid var(--line-hair);
+  font-size: 12.5px;
+  color: var(--cc-text-tertiary);
+  flex-wrap: wrap;
+}
+
+/* --- Field controls ---------------------------------------------------- */
+
+.wn-field {
+  padding: 7px var(--wn-s3);
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line-hair);
+  background: var(--ink-sunken);
+  color: var(--cc-text-primary);
+  font-family: var(--cc-font-ui);
+  font-size: 13px;
+  transition: border-color var(--dur-fast) var(--ease-out);
+}
+.wn-field:hover { border-color: var(--line-solid); }
+.wn-field:focus { outline: none; border-color: var(--cc-accent); }
+.wn-field:focus-visible { outline: 2px solid var(--line-focus); outline-offset: 1px; }
+.wn-field::placeholder { color: var(--cc-text-disabled); }
+
+.wn-field-search { padding-left: 30px; }
+
+.wn-search-wrap { position: relative; display: inline-flex; align-items: center; }
+.wn-search-wrap > svg {
+  position: absolute;
+  left: var(--wn-s2);
+  color: var(--cc-text-tertiary);
+  pointer-events: none;
+}
+
+.wn-range { width: 100%; accent-color: var(--cc-accent); cursor: pointer; }
+.wn-range:focus-visible { outline: 2px solid var(--line-focus); outline-offset: 4px; }
+
+.wn-range-scale {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--cc-text-disabled);
+  margin-top: var(--wn-s1);
+}
+
+/* --- Inline states ----------------------------------------------------- */
+
+.wn-note {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--wn-s2);
+  padding: var(--wn-s3) var(--wn-s4);
+  border-radius: var(--r-md);
+  font-size: 13px;
+  line-height: 1.55;
+  border: 1px solid transparent;
+}
+.wn-note-error { background: rgba(255, 77, 94, 0.07); border-color: rgba(255, 77, 94, 0.25); color: var(--sev-critical); }
+.wn-note-warn  { background: rgba(245, 194, 66, 0.07); border-color: rgba(245, 194, 66, 0.25); color: var(--sev-medium); }
+.wn-note-info  { background: rgba(76, 111, 255, 0.06); border-color: rgba(76, 111, 255, 0.22); color: var(--cc-text-secondary); }
+.wn-note svg { flex-shrink: 0; margin-top: 1px; }
+
+.wn-empty { text-align: center; padding: var(--wn-s7) var(--wn-s4); }
+.wn-empty-icon { color: var(--cc-text-disabled); margin-bottom: var(--wn-s3); }
+.wn-empty-title { font-size: 15px; font-weight: 600; color: var(--cc-text-primary); margin: 0 0 var(--wn-s2); }
+.wn-empty-body {
+  font-size: 13px; line-height: 1.6; color: var(--cc-text-tertiary);
+  margin: 0 auto var(--wn-s4); max-width: 46ch;
+}
+
+.wn-code {
+  font-family: var(--cc-font-data);
+  font-size: 12px;
+  padding: 1px 5px;
+  border-radius: var(--r-sm);
+  background: var(--ink-hover);
+  color: var(--cc-text-secondary);
+  white-space: nowrap;
+}
+
+.wn-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: var(--cc-font-ui);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--cc-accent);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--wn-s1);
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+.wn-link:hover { opacity: 0.78; }
+.wn-link:focus-visible { outline: 2px solid var(--line-focus); outline-offset: 3px; border-radius: var(--r-sm); }
+
+/* --- Entrance animation ------------------------------------------------ */
+
+.wn-enter { animation: wn-enter var(--dur-base) var(--ease-out) both; }
+.wn-enter-1 { animation-delay: 40ms; }
+.wn-enter-2 { animation-delay: 80ms; }
+.wn-enter-3 { animation-delay: 120ms; }
+
+@keyframes wn-enter {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* --- Responsive -------------------------------------------------------- */
+
+@media (max-width: 860px) {
+  .wn-compare { grid-template-columns: 1fr; }
+  .wn-compare-arrow { transform: rotate(90deg); justify-content: center; }
+  .wn-stats { gap: var(--wn-s4); }
+}
+
+@media (max-width: 640px) {
+  .wn-page { gap: var(--wn-s5); }
+  .wn-head-title { font-size: 21px; }
+  .wn-head-sub { font-size: 13px; }
+  .wn-panel { padding: var(--wn-s4); border-radius: var(--r-md); }
+  .wn-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .wn-stat-lead { grid-column: 1 / -1; }
+  .wn-stat-lead .wn-stat-value { font-size: 26px; }
+  .wn-stat-value { font-size: 18px; }
+  .wn-goal-meta { gap: var(--wn-s3); }
+  .wn-flow-legend { gap: var(--wn-s3); }
+  .wn-head-actions { width: 100%; }
+}
+
+/* Honour the OS-level reduced-motion preference across this whole layer. */
+@media (prefers-reduced-motion: reduce) {
+  .wn-enter,
+  .wn-disclose-body { animation: none; }
+  .wn-progress-fill,
+  .wn-flow-seg { transition: none; }
+}
+
+/* --- Utilities the Wealth Navigator layer depends on -------------------- */
+
+/* Visually hidden but available to screen readers. Used for table captions
+   and for labels on controls whose purpose is carried by an adjacent icon. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@keyframes cc-spin { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  [style*="cc-spin"] { animation: none !important; }
+}
+
+/* Goals stacks to a single column before the two-pane layout gets cramped. */
+@media (max-width: 900px) {
+  .wn-goals-layout { grid-template-columns: minmax(0, 1fr) !important; }
+}

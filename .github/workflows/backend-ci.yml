@@ -1,4 +1,4 @@
-﻿name: Backend CI
+name: Backend CI
 
 on:
   push:
@@ -51,6 +51,7 @@ jobs:
         env:
           DATABASE_URL: postgresql://postgres:password@localhost:5432/moneyops_v2
           GEMINI_API_KEY: fake_test_key_for_ci_pipeline
+          PYTHONPATH: .
         run: |
           pytest --junitxml=pytest-report.xml
 

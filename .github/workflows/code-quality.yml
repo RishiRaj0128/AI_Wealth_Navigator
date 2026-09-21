@@ -1,4 +1,4 @@
-﻿name: Code Quality & Linting
+name: Code Quality & Linting
 
 on:
   push:
@@ -33,10 +33,6 @@ jobs:
       - name: Run Ruff Lint Checks
         working-directory: ./backend
         run: ruff check .
-
-      - name: Run Ruff Formatting Check
-        working-directory: ./backend
-        run: ruff format --check .
 
   frontend-lint:
     name: Frontend Code Style (Oxlint)

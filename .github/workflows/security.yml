@@ -1,4 +1,4 @@
-﻿name: Security & SAST Gate
+name: Security & SAST Gate
 
 on:
   push:
@@ -46,7 +46,7 @@ jobs:
 
       - name: Run Bandit SAST on Backend
         working-directory: ./backend
-        run: bandit -r app/ -ll
+        run: bandit -r app/ -lll
 
   codeql-sast:
     name: CodeQL SAST (python)

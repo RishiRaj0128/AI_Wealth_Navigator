@@ -150,3 +150,19 @@ class AnomalySignal(BaseModel):
     is_anomaly: bool
     contributing_signals: List[str]
     raw_features: Dict[str, float]
+
+# Wealth Navigator Models
+class CreateGoalRequest(BaseModel):
+    account_id: Optional[str] = None
+    goal_name: str
+    target_amount: float
+    target_date: Optional[str] = None
+    risk_preference: Optional[str] = "moderate"
+
+class UpdateGoalRequest(BaseModel):
+    current_amount: Optional[float] = None
+    status: Optional[str] = None
+
+class SimulateScenarioRequest(BaseModel):
+    monthly_extra_savings: float = 0.0
+    months: int = 12

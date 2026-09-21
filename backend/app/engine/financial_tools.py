@@ -11,7 +11,9 @@ whitelist, not a free-form expression.
 """
 
 import json
-from datetime import datetime, timedelta
+import math
+import uuid
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from app.engine.database import get_db_connection
@@ -345,6 +347,480 @@ class FinancialTools:
         conn.close()
         return {"metric": metric, "value": value}
 
+    @staticmethod
+    def create_financial_goal(
+        account_id: Optional[str],
+        goal_name: str,
+        target_amount: float,
+        target_date: Optional[str] = None,
+        risk_preference: str = "moderate"
+    ) -> Dict[str, Any]:
+        """Creates a new financial goal row in PostgreSQL."""
+        if not goal_name or not goal_name.strip():
+            return {"error": "goal_name is required"}
+        try:
+            target_amount = float(target_amount)
+            if target_amount <= 0:
+                return {"error": "target_amount must be greater than zero"}
+        except (ValueError, TypeError):
+            return {"error": "target_amount must be a valid positive number"}
+
+        if risk_preference not in ("conservative", "moderate", "aggressive"):
+            risk_preference = "moderate"
+
+        goal_id = f"fgoal_{uuid.uuid4().hex[:10]}"
+        now_str = datetime.now(timezone.utc).isoformat()
+
+        conn = get_db_connection()
+        c = conn.cursor()
+        c.execute("""
+            INSERT INTO financial_goals (goal_id, account_id, goal_name, target_amount, current_amount, target_date, risk_preference, status, created_at)
+            VALUES (%s, %s, %s, %s, 0, %s, %s, 'active', %s)
+            RETURNING *;
+        """, (goal_id, account_id or None, goal_name.strip(), target_amount, target_date or None, risk_preference, now_str))
+        row = dict(c.fetchone())
+        conn.commit()
+        c.close()
+        conn.close()
+        if row.get("target_date"):
+            row["target_date"] = str(row["target_date"])
+        if row.get("created_at"):
+            row["created_at"] = str(row["created_at"])
+        return {"status": "created", "goal": row}
+
+    @staticmethod
+    def get_financial_goals(
+        account_id: Optional[str] = None,
+        status: Optional[str] = "active"
+    ) -> Dict[str, Any]:
+        """Lists financial goals with optional filters by account and status."""
+        clauses = ["1=1"]
+        params: list = []
+        if account_id:
+            clauses.append("account_id = %s")
+            params.append(account_id)
+        if status and status != "all":
+            clauses.append("status = %s")
+            params.append(status)
+
+        query = f"SELECT * FROM financial_goals WHERE {' AND '.join(clauses)} ORDER BY created_at DESC;"
+        conn = get_db_connection()
+        c = conn.cursor()
+        c.execute(query, tuple(params))
+        rows = []
+        for r in c.fetchall():
+            d = dict(r)
+            if d.get("target_date"):
+                d["target_date"] = str(d["target_date"])
+            if d.get("created_at"):
+                d["created_at"] = str(d["created_at"])
+            rows.append(d)
+        c.close()
+        conn.close()
+        return {"goals_returned": len(rows), "goals": rows}
+
+    @staticmethod
+    def update_financial_goal(
+        goal_id: str,
+        current_amount: Optional[float] = None,
+        status: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Updates progress (current_amount) or status of a financial goal."""
+        if not goal_id:
+            return {"error": "goal_id is required"}
+
+        updates = []
+        params = []
+        if current_amount is not None:
+            try:
+                amt = max(0.0, float(current_amount))
+                updates.append("current_amount = %s")
+                params.append(amt)
+            except (ValueError, TypeError):
+                return {"error": "current_amount must be a valid number"}
+        if status is not None:
+            if status in ("active", "completed", "paused", "cancelled"):
+                updates.append("status = %s")
+                params.append(status)
+            else:
+                return {"error": f"Invalid status '{status}'"}
+
+        if not updates:
+            return {"error": "No updates specified"}
+
+        params.append(goal_id)
+        query = f"UPDATE financial_goals SET {', '.join(updates)} WHERE goal_id = %s RETURNING *;"
+
+        conn = get_db_connection()
+        c = conn.cursor()
+        c.execute(query, tuple(params))
+        row = c.fetchone()
+        if not row:
+            c.close()
+            conn.close()
+            return {"error": f"Goal '{goal_id}' not found"}
+        updated = dict(row)
+        conn.commit()
+        c.close()
+        conn.close()
+        if updated.get("target_date"):
+            updated["target_date"] = str(updated["target_date"])
+        if updated.get("created_at"):
+            updated["created_at"] = str(updated["created_at"])
+        return {"status": "updated", "goal": updated}
+
+    @staticmethod
+    def simulate_savings_scenario(
+        account_id: Optional[str] = None,
+        monthly_extra_savings: float = 0.0,
+        months: int = 12,
+        goal_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Deterministic savings projection tool. Computes forward balance and goal acceleration
+        using verified historical transactions and explicit assumptions."""
+        return _compute_savings_projection(
+            account_id=account_id,
+            monthly_extra_savings=monthly_extra_savings,
+            months=months,
+            goal_id=goal_id
+        )
+
+    @staticmethod
+    def recommend_next_actions(
+        account_id: Optional[str] = None,
+        goal_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Deterministic rule-based recommendation tool. Detects spend surges (>15% MoM increase),
+        computes savings impact, and evaluates goal timeline acceleration using the shared projection helper."""
+        conn = get_db_connection()
+        c = conn.cursor()
+
+        clauses = ["transaction_type = 'debit'"]
+        params: list = []
+        if account_id:
+            clauses.append("account_id = %s")
+            params.append(account_id)
+
+        # 1. Fetch distinct months of debit transactions
+        c.execute(f"""
+            SELECT TO_CHAR(transaction_date, 'YYYY-MM') as ym
+            FROM financial_transactions
+            WHERE {' AND '.join(clauses)}
+            GROUP BY ym ORDER BY ym DESC LIMIT 2;
+        """, tuple(params))
+        month_rows = [r["ym"] for r in c.fetchall()]
+
+        candidate_actions = []
+
+        if len(month_rows) >= 2:
+            latest_ym, prior_ym = month_rows[0], month_rows[1]
+
+            params_latest = list(params) + [latest_ym]
+            c.execute(f"""
+                SELECT COALESCE(category, 'Uncategorized') as cat, SUM(amount) as spend
+                FROM financial_transactions
+                WHERE {' AND '.join(clauses)} AND TO_CHAR(transaction_date, 'YYYY-MM') = %s
+                GROUP BY cat ORDER BY spend DESC;
+            """, tuple(params_latest))
+            latest_spend_map = {r["cat"]: float(r["spend"]) for r in c.fetchall()}
+
+            params_prior = list(params) + [prior_ym]
+            c.execute(f"""
+                SELECT COALESCE(category, 'Uncategorized') as cat, SUM(amount) as spend
+                FROM financial_transactions
+                WHERE {' AND '.join(clauses)} AND TO_CHAR(transaction_date, 'YYYY-MM') = %s
+                GROUP BY cat;
+            """, tuple(params_prior))
+            prior_spend_map = {r["cat"]: float(r["spend"]) for r in c.fetchall()}
+
+            opportunities = []
+            for cat, l_spend in latest_spend_map.items():
+                p_spend = prior_spend_map.get(cat, 0.0)
+                if p_spend > 0:
+                    pct_increase = round(((l_spend - p_spend) / p_spend) * 100, 1)
+                else:
+                    pct_increase = 100.0 if l_spend > 0 else 0.0
+
+                if pct_increase > 15.0 and l_spend >= 500:
+                    opportunities.append({
+                        "category": cat,
+                        "latest_spend": round(l_spend, 2),
+                        "prior_spend": round(p_spend, 2),
+                        "mom_increase_inr": round(l_spend - p_spend, 2),
+                        "pct_increase": pct_increase,
+                        "latest_month": latest_ym,
+                        "prior_month": prior_ym
+                    })
+
+            opportunities.sort(key=lambda x: x["mom_increase_inr"], reverse=True)
+            candidate_actions = opportunities[:3]
+        elif len(month_rows) == 1:
+            latest_ym = month_rows[0]
+            params_latest = list(params) + [latest_ym]
+            c.execute(f"""
+                SELECT COALESCE(category, 'Uncategorized') as cat, SUM(amount) as spend
+                FROM financial_transactions
+                WHERE {' AND '.join(clauses)} AND TO_CHAR(transaction_date, 'YYYY-MM') = %s
+                GROUP BY cat ORDER BY spend DESC LIMIT 3;
+            """, tuple(params_latest))
+            for r in c.fetchall():
+                spend = float(r["spend"])
+                if spend >= 500:
+                    candidate_actions.append({
+                        "category": r["cat"],
+                        "latest_spend": round(spend, 2),
+                        "prior_spend": 0.0,
+                        "mom_increase_inr": round(spend, 2),
+                        "pct_increase": 0.0,
+                        "latest_month": latest_ym,
+                        "prior_month": "N/A (single month data)"
+                    })
+        else:
+            c.execute(f"""
+                SELECT COALESCE(category, 'Uncategorized') as cat, SUM(amount) as spend
+                FROM financial_transactions
+                WHERE {' AND '.join(clauses)}
+                GROUP BY cat ORDER BY spend DESC LIMIT 3;
+            """, tuple(params))
+            for r in c.fetchall():
+                spend = float(r["spend"])
+                if spend >= 500:
+                    candidate_actions.append({
+                        "category": r["cat"],
+                        "latest_spend": round(spend, 2),
+                        "prior_spend": 0.0,
+                        "mom_increase_inr": round(spend, 2),
+                        "pct_increase": 0.0,
+                        "latest_month": "all_time",
+                        "prior_month": "N/A"
+                    })
+
+        c.close()
+        conn.close()
+
+        actions = []
+        for opp in candidate_actions:
+            cat = opp["category"]
+            spend = opp["latest_spend"]
+            save_25 = round(spend * 0.25, 2)
+            save_50 = round(spend * 0.50, 2)
+
+            goal_impact_25 = None
+            goal_impact_50 = None
+            if goal_id:
+                # Calls the EXACT SAME projection helper to guarantee zero formula drift!
+                proj_25 = _compute_savings_projection(account_id=account_id, monthly_extra_savings=save_25, months=12, goal_id=goal_id)
+                proj_50 = _compute_savings_projection(account_id=account_id, monthly_extra_savings=save_50, months=12, goal_id=goal_id)
+                gp_25 = proj_25.get("goal_projection")
+                gp_50 = proj_50.get("goal_projection")
+                if gp_25:
+                    goal_impact_25 = {
+                        "months_saved": gp_25.get("months_saved"),
+                        "new_projected_date": gp_25.get("new_projected_date")
+                    }
+                if gp_50:
+                    goal_impact_50 = {
+                        "months_saved": gp_50.get("months_saved"),
+                        "new_projected_date": gp_50.get("new_projected_date")
+                    }
+
+            actions.append({
+                "category": cat,
+                "current_monthly_spend": spend,
+                "prior_monthly_spend": opp["prior_spend"],
+                "mom_increase_inr": opp["mom_increase_inr"],
+                "pct_increase": opp["pct_increase"],
+                "opportunity_type": "spending_surge" if opp["pct_increase"] > 15 else "top_expense",
+                "reduction_options": {
+                    "trim_25_pct": {
+                        "monthly_saving": save_25,
+                        "annual_saving": round(save_25 * 12, 2),
+                        "goal_impact": goal_impact_25
+                    },
+                    "trim_50_pct": {
+                        "monthly_saving": save_50,
+                        "annual_saving": round(save_50 * 12, 2),
+                        "goal_impact": goal_impact_50
+                    }
+                }
+            })
+
+        return {
+            "account_id": account_id,
+            "goal_id": goal_id,
+            "actions_identified": len(actions),
+            "recommendations": actions,
+            "rule_applied": "Categories with >15% month-over-month spend increase and min ₹500 volume flagged as savings opportunities.",
+            "assumptions": [
+                "Assumes category spending can be voluntarily reduced without penalty.",
+                "Goal impact projections use the shared deterministic cash-flow engine with no interest or inflation modeled."
+            ]
+        }
+
+
+def _compute_savings_projection(
+    account_id: Optional[str],
+    monthly_extra_savings: float = 0.0,
+    months: int = 12,
+    goal_id: Optional[str] = None
+) -> Dict[str, Any]:
+    """Authoritative projection engine shared by simulate_savings_scenario and
+    recommend_next_actions. Guarantees deterministic arithmetic and identical numbers."""
+    monthly_extra_savings = max(0.0, float(monthly_extra_savings or 0.0))
+    months = max(1, int(months or 12))
+
+    conn = get_db_connection()
+    c = conn.cursor()
+
+    resolved_account_id = account_id
+    if not resolved_account_id:
+        c.execute("SELECT account_id FROM financial_accounts ORDER BY created_at DESC LIMIT 1;")
+        acc_row = c.fetchone()
+        if acc_row:
+            resolved_account_id = acc_row["account_id"]
+
+    clauses = ["1=1"]
+    params: list = []
+    if resolved_account_id:
+        clauses.append("account_id = %s")
+        params.append(resolved_account_id)
+
+    # 1. Current Balance Proxy
+    c.execute(f"""
+        SELECT balance_after, transaction_date
+        FROM financial_transactions
+        WHERE {' AND '.join(clauses)} AND balance_after IS NOT NULL
+        ORDER BY transaction_date DESC, transaction_id DESC LIMIT 1;
+    """, tuple(params))
+    latest_bal_row = c.fetchone()
+
+    if latest_bal_row and latest_bal_row["balance_after"] is not None:
+        current_balance = float(latest_bal_row["balance_after"])
+        balance_method = "statement_balance"
+        bal_date_str = latest_bal_row["transaction_date"].strftime("%Y-%m-%d") if hasattr(latest_bal_row["transaction_date"], "strftime") else str(latest_bal_row["transaction_date"])
+        balance_assumption = f"Based on latest reported statement balance of ₹{current_balance:,.2f} (as of {bal_date_str})."
+    else:
+        c.execute(f"""
+            SELECT COALESCE(SUM(CASE WHEN transaction_type = 'credit' THEN amount ELSE -amount END), 0) as net_balance
+            FROM financial_transactions WHERE {' AND '.join(clauses)};
+        """, tuple(params))
+        net_row = c.fetchone()
+        current_balance = float(net_row["net_balance"]) if net_row else 0.0
+        balance_method = "net_transaction_sum"
+        balance_assumption = f"Estimated from net transaction history (sum of credits minus debits: ₹{current_balance:,.2f}) because statement balance was not reported in transaction records."
+
+    # 2. Average Monthly Net Savings with graceful degradation
+    c.execute(f"""
+        SELECT TO_CHAR(transaction_date, 'YYYY-MM') as ym,
+               COALESCE(SUM(CASE WHEN transaction_type = 'credit' THEN amount ELSE 0 END), 0) as credits,
+               COALESCE(SUM(CASE WHEN transaction_type = 'debit' THEN amount ELSE 0 END), 0) as debits
+        FROM financial_transactions
+        WHERE {' AND '.join(clauses)}
+        GROUP BY ym
+        ORDER BY ym DESC
+        LIMIT 3;
+    """, tuple(params))
+    month_rows = [dict(r) for r in c.fetchall()]
+
+    n_months = len(month_rows)
+    if n_months >= 3:
+        avg_credits = sum(float(r["credits"]) for r in month_rows) / 3.0
+        avg_debits = sum(float(r["debits"]) for r in month_rows) / 3.0
+        avg_monthly_net_savings = round(avg_credits - avg_debits, 2)
+        month_labels = [datetime.strptime(r["ym"], "%Y-%m").strftime("%b %Y") for r in reversed(month_rows)]
+        history_assumption = f"Based on average of last 3 months' actual transactions ({', '.join(month_labels)}): avg income ₹{avg_credits:,.2f}/mo, avg spend ₹{avg_debits:,.2f}/mo."
+    elif n_months > 0:
+        avg_credits = sum(float(r["credits"]) for r in month_rows) / float(n_months)
+        avg_debits = sum(float(r["debits"]) for r in month_rows) / float(n_months)
+        avg_monthly_net_savings = round(avg_credits - avg_debits, 2)
+        month_labels = [datetime.strptime(r["ym"], "%Y-%m").strftime("%b %Y") for r in reversed(month_rows)]
+        history_assumption = f"Based on {n_months} available month(s) of actual transaction data ({', '.join(month_labels)}) — projection is an initial estimate; requires more historical statements for higher accuracy."
+    else:
+        avg_credits = 0.0
+        avg_debits = 0.0
+        avg_monthly_net_savings = 0.0
+        history_assumption = "No historical transactions found for this account; baseline monthly net savings assumed to be ₹0."
+
+    total_monthly_savings = round(avg_monthly_net_savings + monthly_extra_savings, 2)
+    projected_balance = round(current_balance + (total_monthly_savings * months), 2)
+    total_extra_saved = round(monthly_extra_savings * months, 2)
+
+    # 3. Goal Impact Calculation
+    goal_info = None
+    if goal_id:
+        c.execute("SELECT * FROM financial_goals WHERE goal_id = %s;", (goal_id,))
+        g_row = c.fetchone()
+        if g_row:
+            g = dict(g_row)
+            target_amount = float(g["target_amount"])
+            current_amount = float(g.get("current_amount") or 0.0)
+            remaining_needed = max(0.0, target_amount - current_amount)
+
+            if avg_monthly_net_savings > 0 and remaining_needed > 0:
+                baseline_months_needed = math.ceil(remaining_needed / avg_monthly_net_savings)
+                baseline_completion_date = (datetime.now(timezone.utc) + timedelta(days=30.4375 * baseline_months_needed)).strftime("%Y-%m-%d")
+            elif remaining_needed == 0:
+                baseline_months_needed = 0
+                baseline_completion_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            else:
+                baseline_months_needed = None
+                baseline_completion_date = "Unreachable at baseline savings rate (net cash flow is ≤ ₹0)"
+
+            if total_monthly_savings > 0 and remaining_needed > 0:
+                new_months_needed = math.ceil(remaining_needed / total_monthly_savings)
+                new_completion_date = (datetime.now(timezone.utc) + timedelta(days=30.4375 * new_months_needed)).strftime("%Y-%m-%d")
+            elif remaining_needed == 0:
+                new_months_needed = 0
+                new_completion_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            else:
+                new_months_needed = None
+                new_completion_date = "Unreachable even with extra savings (net cash flow is ≤ ₹0)"
+
+            if baseline_months_needed is not None and new_months_needed is not None:
+                months_saved = max(0, baseline_months_needed - new_months_needed)
+            elif baseline_months_needed is None and new_months_needed is not None:
+                months_saved = "Accelerates goal to reachable timeline"
+            else:
+                months_saved = 0
+
+            goal_info = {
+                "goal_id": g["goal_id"],
+                "goal_name": g["goal_name"],
+                "target_amount": target_amount,
+                "current_amount": current_amount,
+                "remaining_needed": remaining_needed,
+                "target_date": str(g["target_date"]) if g.get("target_date") else None,
+                "baseline_months_to_goal": baseline_months_needed,
+                "baseline_projected_date": baseline_completion_date,
+                "new_months_to_goal": new_months_needed,
+                "new_projected_date": new_completion_date,
+                "months_saved": months_saved
+            }
+
+    c.close()
+    conn.close()
+
+    assumptions = [
+        balance_assumption,
+        history_assumption,
+        "Assumes no other spending, income, or lifestyle changes occur during the projection window.",
+        "Does not account for inflation, interest, investment returns, taxes, or irregular one-off emergencies."
+    ]
+
+    return {
+        "account_id": resolved_account_id,
+        "current_balance": current_balance,
+        "balance_method": balance_method,
+        "avg_monthly_net_savings": avg_monthly_net_savings,
+        "monthly_extra_savings": monthly_extra_savings,
+        "total_monthly_savings": total_monthly_savings,
+        "projection_months": months,
+        "projected_balance": projected_balance,
+        "total_extra_saved": total_extra_saved,
+        "goal_projection": goal_info,
+        "assumptions": assumptions
+    }
+
 
 GEMINI_FINANCIAL_TOOL_DECLARATIONS = [
     {
@@ -466,6 +942,59 @@ GEMINI_FINANCIAL_TOOL_DECLARATIONS = [
             },
             "required": ["metric"]
         }
+    },
+    {
+        "name": "create_financial_goal",
+        "description": "Creates a new personal financial goal with a target amount and target date.",
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "account_id": {"type": "STRING", "description": "Optional account identifier to link this goal to."},
+                "goal_name": {"type": "STRING", "description": "Name or purpose of the goal (e.g. 'Emergency Fund', 'House Down Payment')."},
+                "target_amount": {"type": "NUMBER", "description": "The target savings amount in INR."},
+                "target_date": {"type": "STRING", "description": "Target completion date in YYYY-MM-DD format."},
+                "risk_preference": {"type": "STRING", "description": "Risk preference: 'conservative', 'moderate', or 'aggressive'."}
+            },
+            "required": ["goal_name", "target_amount"]
+        }
+    },
+    {
+        "name": "get_financial_goals",
+        "description": "Retrieves the user's active or past financial goals, including target amounts and current progress.",
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "account_id": {"type": "STRING", "description": "Optional account filter."},
+                "status": {"type": "STRING", "description": "Goal status filter: 'active', 'completed', 'paused', or 'all' (default 'active')."}
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "simulate_savings_scenario",
+        "description": "Deterministic 'what-if' savings projection. Calculates projected account balance and goal timeline acceleration given an extra monthly savings amount and month duration. Never calculate projections yourself — use this tool's exact figures and assumptions.",
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "account_id": {"type": "STRING", "description": "Account to evaluate."},
+                "monthly_extra_savings": {"type": "NUMBER", "description": "Additional monthly amount to save in INR (e.g. 5000)."},
+                "months": {"type": "INTEGER", "description": "Projection horizon in months (default 12)."},
+                "goal_id": {"type": "STRING", "description": "Optional goal ID to project completion date acceleration for."}
+            },
+            "required": ["monthly_extra_savings"]
+        }
+    },
+    {
+        "name": "recommend_next_actions",
+        "description": "Deterministic rule-based recommendation tool. Analyzes category spend increases (>15% MoM) and computes how reducing expenses accelerates financial goals. Never invent recommendation numbers — quote this tool's exact figures.",
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "account_id": {"type": "STRING", "description": "Account to evaluate."},
+                "goal_id": {"type": "STRING", "description": "Optional goal ID to calculate timeline acceleration for."}
+            },
+            "required": []
+        }
     }
 ]
 
@@ -479,4 +1008,8 @@ FINANCIAL_TOOL_REGISTRY = {
     "find_duplicate_transactions": FinancialTools.find_duplicate_transactions,
     "find_recurring_transactions": FinancialTools.find_recurring_transactions,
     "calculate_financial_metric": FinancialTools.calculate_financial_metric,
+    "create_financial_goal": FinancialTools.create_financial_goal,
+    "get_financial_goals": FinancialTools.get_financial_goals,
+    "simulate_savings_scenario": FinancialTools.simulate_savings_scenario,
+    "recommend_next_actions": FinancialTools.recommend_next_actions,
 }

@@ -338,5 +338,66 @@ export async function deleteFinancialDocument(documentId) {
   return res.json();
 }
 
+// Wealth Navigator: Goals, What-If Scenarios & Proactive Recommendations
+export async function createFinancialGoal(goalData) {
+  const res = await fetch(`${API_BASE}/financial/goals`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(goalData)
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Failed to create financial goal");
+  }
+  return res.json();
+}
+
+export async function fetchFinancialGoals(accountId = null, status = "all") {
+  const params = new URLSearchParams();
+  if (accountId) params.append("account_id", accountId);
+  if (status) params.append("status", status);
+  const res = await fetch(`${API_BASE}/financial/goals?${params.toString()}`);
+  if (!res.ok) throw new Error("Failed to fetch financial goals");
+  return res.json();
+}
+
+export async function updateFinancialGoal(goalId, updateData) {
+  const res = await fetch(`${API_BASE}/financial/goals/${goalId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(updateData)
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Failed to update financial goal");
+  }
+  return res.json();
+}
+
+export async function simulateGoalScenario(goalId, monthlyExtraSavings, months = 12) {
+  const res = await fetch(`${API_BASE}/financial/goals/${goalId}/simulate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      monthly_extra_savings: Number(monthlyExtraSavings) || 0,
+      months: Number(months) || 12
+    })
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Failed to simulate savings scenario");
+  }
+  return res.json();
+}
+
+export async function fetchGoalRecommendations(goalId) {
+  const res = await fetch(`${API_BASE}/financial/goals/${goalId}/recommendations`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Failed to fetch recommendations");
+  }
+  return res.json();
+}
+
 
 

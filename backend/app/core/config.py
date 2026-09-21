@@ -8,9 +8,9 @@ load_dotenv()
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 class Settings(BaseModel):
-    APP_NAME: str = "MoneyOps AI V2"
+    APP_NAME: str = "Wealth Navigator AI"
     APP_VERSION: str = "2.0.0"
-    TAGLINE: str = "An AI financial incident investigator for Razorpay payment operations."
+    TAGLINE: str = "Personal financial wellness platform: explore what-if scenarios, track goals, and receive explainable AI guidance."
     
     # PostgreSQL Primary Database Configuration
     DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql://postgres:password@127.0.0.1:5432/moneyops_v2")

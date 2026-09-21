@@ -1,33 +1,31 @@
-# MoneyOps AI
+# Wealth Navigator AI
 
-**A financial investigation system — not a PDF chatbot.**
+**Personal financial wellness platform — understand your position, explore what-if scenarios, and get proactive, explainable next-best-action recommendations.**
 
 ---
 
 ## The Problem
 
-Financial questions rarely live in one place. "Why did my spending increase?" needs exact transaction totals. "Was this fee legitimate?" needs the actual policy document. "Why did this gateway start failing?" needs live operational data. A generic chatbot can't answer any of these reliably, because it can't tell the difference between what it *knows* and what it's *making up* — and a confident, wrong financial answer is worse than no answer at all.
+Personal financial questions rarely have simple, one-size-fits-all answers. "Can I afford to save ₹10,000 more each month?" requires understanding real net cash flow across debits and credits. "When will I reach my goal?" demands deterministic projections grounded in actual historical spending patterns. "Where can I cut back?" requires detecting subtle month-over-month category surges.
+
+Generic AI chatbots fail at this because they hallucinate projection figures, invent interest or savings rates, and cannot distinguish verified transaction facts from plausible-sounding guesses. In personal finance, a confident but fabricated projection is worse than no advice at all.
 
 ## The Solution
 
-MoneyOps AI decides, per question, what kind of evidence is actually needed — an exact number from PostgreSQL, a passage from an uploaded document, or both — retrieves that evidence with fixed backend tools, and only then asks Gemini to reason over what came back. Gemini never gets to answer from its own general knowledge.
+**Wealth Navigator AI** decouples mathematical computation and evidence retrieval from AI reasoning. All projections, scenario simulations, category comparisons, and action recommendations are executed by **authoritative, deterministic backend tools** directly against verified PostgreSQL financial records. 
 
-## Why MoneyOps AI?
+Gemini acts solely as an evidence-grounded advisor: it orchestrates tool selection, synthesizes findings, and translates raw numbers into clear, plain-language guidance—complete with an explicit, visible list of assumptions behind every projection. Gemini never calculates projections or writes SQL itself.
 
-Most financial AI assistants answer from either:
-- structured transaction data, **or**
-- uploaded documents.
+## Why Wealth Navigator AI?
 
-**MoneyOps AI combines both.** It determines what evidence a question requires, retrieves the relevant financial records *and* documents, and gives Gemini only that evidence to reason over.
+Most financial assistants either provide static dashboards without proactive guidance or conversational bots that guess at numbers.
 
-That enables questions like:
-- "Why did my spending increase this month?"
-- "What was my largest transaction?"
-- "Does this fee comply with the uploaded policy?"
-- "Is this charge unusual?"
-- "What happened when this payment gateway started failing?"
-
-The result isn't just an AI-generated answer — it's an **evidence-backed financial investigation**, with the exact transactions and document sections behind every claim, a persistent history of past investigations, and (on the payments-operations side) a human-approval workflow before anything acts on the finding.
+**Wealth Navigator AI combines deterministic financial modeling with grounded AI advisory:**
+- **Deterministic What-If Projections**: Real multi-month cash-flow analysis projects goal timelines without model hallucination.
+- **Proactive Next-Best Actions**: Rule-based detection surfaces category spending increases (>15% MoM) and quantifies the exact days/months saved by trimming them.
+- **Explicit Assumptions Transparency**: Every recommendation and projection prominently exposes its underlying assumptions (e.g., data window used, balance proxy method, inflation/interest exclusions).
+- **Hybrid Document & Transaction Intelligence**: Evaluates structured banking data alongside fee policies, invoices, and bank statements parsed via semantic RAG.
+- **Full Traceability & Auditability**: Every scenario simulation and recommendation is logged with inputs, tools called, and outputs.
 
 ---
 
@@ -38,38 +36,44 @@ flowchart TD
     U[User] --> FE[React Frontend]
     FE --> API[FastAPI Backend]
 
-    API --> ORCH{Financial Copilot Agent<br/>Gemini tool-calling loop}
+    API --> ORCH{AI Advisor Agent<br/>Gemini tool-calling loop}
 
-    ORCH -->|structured question| TOOLS1[SQL Tools:<br/>transactions, summaries,<br/>comparisons, duplicates,<br/>recurring, metrics]
-    ORCH -->|policy/context question| TOOLS2[Retrieval Tool:<br/>search document chunks]
+    ORCH -->|scenarios & goals| TOOLS1[Deterministic Wealth Tools:<br/>simulate_savings_scenario,<br/>recommend_next_actions,<br/>get_financial_goals]
+    ORCH -->|structured analytics| TOOLS2[SQL Aggregation Tools:<br/>spending summaries, comparisons,<br/>metrics, recurring, duplicates]
+    ORCH -->|policy/statement context| TOOLS3[RAG Semantic Retrieval:<br/>search document chunks]
 
-    TOOLS1 --> PG[(PostgreSQL<br/>financial_transactions)]
-    TOOLS2 --> EMB[Embed query<br/>Gemini embeddings]
+    TOOLS1 --> PG[(PostgreSQL<br/>financial_transactions<br/>& financial_goals)]
+    TOOLS2 --> PG
+    TOOLS3 --> EMB[Embed query<br/>Gemini embeddings]
     EMB --> CHUNKS[(PostgreSQL<br/>financial_document_chunks)]
     CHUNKS -->|cosine similarity, in Python| RANKED[Top matching chunks]
 
-    PG --> EVID[Evidence returned to Gemini]
+    PG --> EVID[Deterministic Output & Assumptions]
     RANKED --> EVID
 
-    EVID --> GEMINI[Gemini reasons over<br/>only the evidence returned]
-    GEMINI --> ANSWER[Grounded answer +<br/>evidence + sources consulted]
-    ANSWER --> RUN[(financial_analysis_runs<br/>saved for history/audit)]
+    EVID --> GEMINI[Gemini explains & synthesizes<br/>strictly from tool output]
+    GEMINI --> ANSWER[Explainable Guidance +<br/>Numbers + Assumptions list]
+    ANSWER --> REC[(wealth_recommendations<br/>logged for auditability)]
     ANSWER --> FE
 ```
 
-Gemini never gets raw database access. It sees a fixed menu of tools, picks the ones relevant to the question, and only writes its final answer once those tools have returned real data. The same "retrieve with fixed tools, then reason over exactly what came back" pattern powers the incident-investigation side too, against a separate payment-operations tool set.
+Gemini never receives raw database access or arbitrary arithmetic authority. It selects tools, receives calculated outputs, and explains them. Every figure presented to the user originates from backend code.
 
 ---
 
 ## What You Can Do
 
-**Financial Copilot** — Upload bank statements, transaction exports, or fee policies; ask natural-language questions; get answers combining real computed numbers with real retrieved document text, with every claim traceable to its source. Past questions are saved and reopen instantly, with no repeat AI call.
+**Goals & What-If Scenarios** — Define financial goals (target amount, date, risk preference). Run interactive what-if simulations adjusting extra monthly savings to project accelerated completion dates and see the exact time saved, with all assumptions made visible.
 
-**Document Intelligence** — PDF, CSV, and XLSX uploads are parsed into structured transactions (where the format allows) and indexed for semantic search. Original files are stored for preview/download. Deleting a document removes every chunk and transaction derived from it — nothing lingers in retrieval after removal.
+**Proactive Next-Best Actions** — Receive deterministic, rule-based recommendations that pinpoint spending surges (>15% MoM increase) and calculate how curbing those expenses directly accelerates your financial goals.
 
-**Incident Investigation** — Unsupervised anomaly detection (IsolationForest) over payment/refund/webhook data flags statistically real incidents. Gemini investigates each one using read-only tools, checks historical case memory for precedent, and proposes a remediation action. Higher-risk actions require explicit human approval before a logged, safe simulation executes — nothing acts on its own.
+**AI Advisor (Financial Copilot)** — Ask natural-language questions regarding your finances, spending habits, and uploaded statements. Receive evidence-grounded answers citing specific transactions and document excerpts without hallucinations.
 
-**Auditability** — Every Copilot query (tools called, evidence retrieved, final answer) and every incident action (proposed → approved/rejected → executed) is permanently recorded, so any AI-generated conclusion can be traced back to what actually produced it.
+**Financial Overview** — High-level dashboard showing total transactions, connected accounts, indexed documents, and cash-flow health.
+
+**Document Intelligence** — Upload bank statements, invoices, and fee policies (PDF, CSV, XLSX). Automatically parses structured line items and generates semantic embeddings for RAG retrieval.
+
+**Investigation & Audit Trail** — Built-in operational monitoring and audit logging inherited from the core platform, logging every recommendation run, tool execution, and governed action.
 
 ---
 
@@ -165,17 +169,17 @@ On Windows, `run_project.ps1` / `run_project.bat` starts PostgreSQL, the backend
 ## Project Structure
 
 ```text
-RzorPayInternProj/
+wealth-navigator/
 ├── backend/
 │   ├── app/
-│   │   ├── api/routes.py                    # every HTTP endpoint
+│   │   ├── api/routes.py                    # every HTTP endpoint (including /financial/goals and /simulate)
 │   │   ├── engine/
-│   │   │   ├── financial_copilot_agent.py   # Copilot's Gemini tool-calling loop
-│   │   │   ├── financial_tools.py           # Copilot's SQL/retrieval tool registry
+│   │   │   ├── financial_copilot_agent.py   # AI Advisor Gemini tool-calling loop + grounding
+│   │   │   ├── financial_tools.py           # SQL/retrieval tool registry (scenarios, goals, actions)
 │   │   │   ├── document_ingestion.py        # upload -> extract -> chunk -> embed
 │   │   │   ├── embeddings.py                # Gemini embedding calls + cosine similarity
-│   │   │   ├── gemini_agent.py              # incident investigation's Gemini loop
-│   │   │   ├── investigation_tools.py       # incident investigation's tool registry
+│   │   │   ├── gemini_agent.py              # operational investigation's Gemini loop
+│   │   │   ├── investigation_tools.py       # operational investigation's tool registry
 │   │   │   ├── anomaly_detector.py          # IsolationForest detection
 │   │   │   ├── action_governor.py           # human-approval + audit logging
 │   │   │   ├── case_memory.py               # historical incident similarity matching
@@ -185,8 +189,8 @@ RzorPayInternProj/
 │   ├── tests/                                # pytest suite (isolated test database)
 │   └── requirements.txt
 ├── frontend/src/
-│   ├── components/ (OverviewView, DataView, InvestigationView,
-│   │                FinancialCopilotView, AuditView, Header)
+│   ├── components/ (OverviewView, GoalsView, FinancialCopilotView,
+│   │                DataView, InvestigationView, AuditView, Header)
 │   ├── api.js                                # all backend API calls
 │   └── App.jsx                               # tab navigation + top-level state
 ├── .env.example
@@ -221,28 +225,30 @@ Gemini is the reasoning layer over evidence that was already retrieved, not a so
 | Embedding model | `gemini-embedding-001` |
 | Calling pattern | Multi-turn loop: Gemini requests a tool → backend executes it in Python/SQL → result fed back → repeat until a final structured JSON answer |
 
-**Financial Copilot tools** (all backend-executed and parameterized — Gemini never writes or sees SQL): `search_financial_documents`, `search_financial_policy`, `get_transactions`, `get_transaction_details`, `get_spending_summary`, `compare_periods`, `find_duplicate_transactions`, `find_recurring_transactions`, `calculate_financial_metric` (a whitelisted set of metric names — anything else is rejected before it reaches a query).
+**Financial & Wealth Tools** (all backend-executed and parameterized — Gemini never writes or sees SQL): `create_financial_goal`, `get_financial_goals`, `simulate_savings_scenario`, `recommend_next_actions`, `search_financial_documents`, `search_financial_policy`, `get_transactions`, `get_transaction_details`, `get_spending_summary`, `compare_periods`, `find_duplicate_transactions`, `find_recurring_transactions`, `calculate_financial_metric` (a whitelisted set of metric names — anything else is rejected before it reaches a query).
 
 **Incident-investigation tools** (separate registry, same pattern): `get_incident`, `get_gateway_metrics`, `get_failed_payments`, `get_affected_merchants`, `get_merchant_metrics`, `get_merchant_refunds`, `get_webhook_activity`, `find_similar_incidents`, and related read-only lookups.
 
-The system prompt and tool design are intended to keep Gemini from: fabricating transactions/documents/policy clauses, claiming a charge is fraudulent without a tool-returned basis, computing totals itself (tools return the number; Gemini reports it), running any SQL or write operation directly, or taking a payment/settlement action without going through the human-approval Action Governor.
+The system prompt and tool design are intended to keep Gemini from: fabricating transactions/documents/policy clauses, inventing scenario projections or interest rates (the backend `simulate_savings_scenario` tool supplies the numbers; Gemini explains them), claiming a charge is fraudulent without a tool-returned basis, computing totals itself, running any SQL or write operation directly, or taking an action without going through the human-approval Action Governor.
 
 </details>
 
 <details>
 <summary><strong>Database tables</strong></summary>
 
-**Financial Copilot**
+**Financial Wellness & Advisory**
 
 | Table | Purpose |
 |---|---|
 | `financial_accounts` | Logical accounts, derived from an optional account name at upload |
+| `financial_goals` | Tracked savings goals (target amount, current amount, target date, risk preference) |
+| `wealth_recommendations` | Audit log of scenario simulations & next-best-action runs with explicit assumptions |
 | `financial_documents` | One row per upload — filename, type, status, original file bytes, error message if failed |
 | `financial_document_chunks` | Chunked text + embedding vector (JSON) + page/section metadata |
 | `financial_transactions` | Structured transaction rows extracted from a document |
-| `financial_analysis_runs` | One row per Copilot question — query, tools called, evidence, response |
+| `financial_analysis_runs` | One row per AI Advisor question — query, tools called, evidence, response |
 
-**Incident investigation**
+**Incident investigation (inherited core platform)**
 
 | Table | Purpose |
 |---|---|
@@ -262,16 +268,15 @@ A deleted `financial_documents` row cascades to its chunks and transactions (`ON
 
 | Tab | What it does |
 |---|---|
-| Overview | Active/resolved incident counts, exposure totals, per-incident evidence cards |
-| Data | Raw payments/orders/refunds/webhooks by source, Razorpay sync, Incident Lab generator |
-| Investigation | Full incident detail, "Investigate with Gemini," case memory, Action Governor approval |
-| Financial Copilot | Document upload, conversational financial Q&A, document library |
-| Audit Log | The immutable trail of every proposed/approved/rejected/executed action |
+| Financial Overview | High-level cash flow, connected accounts, recent activity, system health |
+| AI Advisor | Natural-language financial questions, document grounding, explainable advice |
+| Goals & Scenarios | Goal tracking, interactive "what-if" savings simulator, proactive next-best actions |
+| Data & Documents | Statement uploads, document preview/download, raw data explorer |
+| Investigation | Detailed incident investigation with Gemini, case memory, Action Governor |
+| Audit Log | Permanent record of all recommendations, simulated actions, and approvals |
 
-An earlier **Evaluation** page (benchmarking the anomaly detector against 20 labeled scenarios) still exists in the codebase/API but was removed from navigation in favor of Financial Copilot — mentioned here for completeness only, not a current user-facing feature.
+**AI Advisor per question:** the question appears immediately as a message, with an assistant placeholder cycling through status text while the tool-calling loop runs; only that placeholder is replaced when the real answer arrives, and every earlier Q&A in the session stays visible. The question and full result are saved to `financial_analysis_runs`; clicking any earlier question in "Recent Investigations" restores the stored answer instantly, without re-running Gemini.
 
-**Financial Copilot per question:** the question appears immediately as a message, with an assistant placeholder cycling through status text while the tool-calling loop runs; only that placeholder is replaced when the real answer arrives, and every earlier Q&A in the session stays visible. The question and full result are saved to `financial_analysis_runs`; clicking any earlier question in "Recent Investigations" restores the stored answer instantly, without re-running Gemini.
-
-**Incident investigation:** detected → (optionally) investigated by Gemini → evidence-confidence computed from the real signals returned → case-memory precedent shown → recommendation proposed → human approves or rejects → approved actions execute as a logged, safe simulation → every transition is audit-logged.
+**Goals & Scenario simulation:** adjusting the extra savings slider or months immediately executes deterministic projection math against the account's actual cash-flow history, displaying the projected balance, timeline acceleration, and an explicit breakdown of all assumptions.
 
 </details>

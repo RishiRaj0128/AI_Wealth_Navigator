@@ -455,10 +455,42 @@ def init_db():
     );
     """)
 
+    # 18. Financial Goals Table (Wealth Navigator personal goals)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS financial_goals (
+        goal_id VARCHAR(100) PRIMARY KEY,
+        account_id VARCHAR(100) REFERENCES financial_accounts(account_id) ON DELETE CASCADE,
+        goal_name VARCHAR(255) NOT NULL,
+        target_amount DOUBLE PRECISION NOT NULL,
+        current_amount DOUBLE PRECISION DEFAULT 0,
+        target_date DATE,
+        risk_preference VARCHAR(20) DEFAULT 'moderate',
+        status VARCHAR(20) DEFAULT 'active',
+        created_at TIMESTAMPTZ NOT NULL
+    );
+    """)
+
+    # 19. Wealth Recommendations Table (Auditability for projections & advice)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS wealth_recommendations (
+        recommendation_id VARCHAR(100) PRIMARY KEY,
+        goal_id VARCHAR(100) REFERENCES financial_goals(goal_id) ON DELETE SET NULL,
+        query TEXT,
+        tools_called_json TEXT,
+        assumptions_json TEXT,
+        recommendation_json TEXT,
+        model VARCHAR(100),
+        created_at TIMESTAMPTZ NOT NULL
+    );
+    """)
+
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_fin_txn_account ON financial_transactions(account_id);")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_fin_txn_date ON financial_transactions(transaction_date);")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_fin_txn_merchant ON financial_transactions(merchant);")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_fin_chunks_document ON financial_document_chunks(document_id);")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_fin_goals_account ON financial_goals(account_id);")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_fin_goals_status ON financial_goals(status);")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_wealth_recs_goal ON wealth_recommendations(goal_id);")
 
     # Indexes
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_payments_order ON payments(order_id);")
@@ -481,4 +513,4 @@ def init_db():
 
 if __name__ == "__main__":
     init_db()
-    print("PostgreSQL 9-table schema initialized successfully.")
+    print("PostgreSQL schema initialized successfully.")

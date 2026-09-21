@@ -1,12 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { LayoutGrid, Database, Search, MessageCircle, ScrollText } from 'lucide-react';
+import { LayoutGrid, Database, Search, MessageCircle, ScrollText, Target } from 'lucide-react';
 
 const NAV_ITEMS = [
-  { key: 'overview', Icon: LayoutGrid, label: 'Overview' },
-  { key: 'data', Icon: Database, label: 'Data' },
+  { key: 'overview', Icon: LayoutGrid, label: 'Financial Overview' },
+  { key: 'copilot', Icon: MessageCircle, label: 'AI Advisor' },
+  { key: 'goals', Icon: Target, label: 'Goals & Scenarios' },
+  { key: 'data', Icon: Database, label: 'Data & Documents' },
   { key: 'investigation', Icon: Search, label: 'Investigation' },
-  { key: 'copilot', Icon: MessageCircle, label: 'Financial Copilot' },
   { key: 'audit', Icon: ScrollText, label: 'Audit Log' },
 ];
 
@@ -104,7 +105,13 @@ function NavTab({ item, isActive, onClick }) {
         <motion.span
           layoutId="nav-active-pill"
           transition={{ type: 'spring', stiffness: 500, damping: 36 }}
-          style={{ position: 'absolute', inset: 0, background: 'var(--primary)', borderRadius: '6px', zIndex: 0 }}
+          style={{
+            position: 'absolute',
+            inset: 0,
+            background: 'var(--primary)',
+            borderRadius: '6px',
+            zIndex: 0
+          }}
         />
       )}
       <span style={{ position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', gap: '6px' }} title={item.label}>
@@ -118,34 +125,31 @@ function NavTab({ item, isActive, onClick }) {
 const CURSOR_PREF_KEY = 'moneyops-cc-cursor-enabled';
 
 export default function Header({
-  activeTab, onTabChange, health, stats, aiStatus,
-  pendingInvestigationCount, investigatedCount, onRefresh,
-  cursorEnabled, onToggleCursor
+  activeTab,
+  onTabChange,
+  health,
+  stats,
+  aiStatus,
+  pendingInvestigationCount = 0,
+  investigatedCount = 0,
+  onRefresh,
+  cursorEnabled = true,
+  onToggleCursor
 }) {
-  const isRazorpayConfigured = Boolean(health?.razorpay_configured);
-  const isPostgresHealthy = health?.status === 'healthy' || health?.database === 'PostgreSQL';
-  const isGeminiConfigured = Boolean(health?.gemini_configured ?? aiStatus?.configured);
-  const geminiModel = aiStatus?.model || 'gemini-3.5-flash-lite';
-
-  // Scroll state: 56px -> 48px after 24px of scroll, with a smoother/denser
-  // surface once scrolled (a touch more opaque + a bit more blur) so the
-  // header reads as "lifted" rather than just shrinking. rAF-guarded so this
-  // never fires more than once per frame.
   const [scrolled, setScrolled] = useState(false);
+
   useEffect(() => {
-    let ticking = false;
-    const onScroll = () => {
-      if (ticking) return;
-      ticking = true;
-      requestAnimationFrame(() => {
-        setScrolled(window.scrollY > 24);
-        ticking = false;
-      });
+    const handleScroll = () => {
+      setScrolled(window.scrollY > 20);
     };
-    window.addEventListener('scroll', onScroll, { passive: true });
-    onScroll();
-    return () => window.removeEventListener('scroll', onScroll);
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
   }, []);
+
+  const isPostgresHealthy = health?.status === 'ok';
+  const isRazorpayConfigured = health?.razorpay_configured === true;
+  const isGeminiConfigured = aiStatus?.configured === true;
+  const geminiModel = aiStatus?.model || 'gemini-3.5-flash-lite';
 
   return (
     <header style={{
@@ -175,32 +179,32 @@ export default function Header({
             width: '34px',
             height: '34px',
             borderRadius: '8px',
-            background: 'linear-gradient(135deg, #6366f1 0%, #4338ca 100%)',
+            background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            boxShadow: '0 0 12px rgba(99, 102, 241, 0.4)',
+            boxShadow: '0 0 12px rgba(16, 185, 129, 0.4)',
             color: '#fff',
             fontWeight: '800',
             fontSize: '16px',
             flexShrink: 0
           }}>
-            M
+            W
           </div>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <span style={{ fontSize: '1.1rem', fontWeight: 800, letterSpacing: '-0.02em', color: '#fff' }}>
-                MoneyOps AI
+                Wealth Navigator AI
               </span>
               <span style={{
                 fontSize: '10px',
                 padding: '2px 8px',
                 borderRadius: '12px',
-                background: 'rgba(99, 102, 241, 0.15)',
-                color: 'var(--primary)',
+                background: 'rgba(16, 185, 129, 0.15)',
+                color: '#10b981',
                 fontWeight: '700'
               }}>
-                V2
+                AI Wellness
               </span>
             </div>
             <AnimatePresence initial={false}>
@@ -212,7 +216,7 @@ export default function Header({
                   transition={{ duration: 0.18 }}
                   style={{ fontSize: '11px', color: 'var(--text-muted)', margin: 0, fontWeight: 500, overflow: 'hidden' }}
                 >
-                  Financial Incident Investigator
+                  Personal Financial Wellness &amp; Guidance
                 </motion.p>
               )}
             </AnimatePresence>

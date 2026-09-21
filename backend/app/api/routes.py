@@ -18,6 +18,8 @@ from app.engine.action_governor import action_governor
 from app.engine.batch_evaluator import batch_evaluator
 from app.engine.document_ingestion import DocumentIngestionPipeline
 from app.engine.financial_copilot_agent import financial_copilot_agent
+from app.engine.financial_tools import FinancialTools
+from app.models.schemas import CreateGoalRequest, UpdateGoalRequest, SimulateScenarioRequest
 
 router = APIRouter()
 
@@ -1064,6 +1066,145 @@ def get_copilot_run(run_id: str):
             except Exception:
                 pass
     return d
+ 
+ 
+# =============================================================================
+# WEALTH NAVIGATOR: GOALS, WHAT-IF SCENARIOS & PROACTIVE RECOMMENDATIONS
+# =============================================================================
+
+@router.post("/financial/goals")
+def create_goal(req: CreateGoalRequest):
+    """Creates a new personal financial goal."""
+    res = FinancialTools.create_financial_goal(
+        account_id=req.account_id,
+        goal_name=req.goal_name,
+        target_amount=req.target_amount,
+        target_date=req.target_date,
+        risk_preference=req.risk_preference or "moderate"
+    )
+    if "error" in res:
+        raise HTTPException(status_code=400, detail=res["error"])
+    return res
 
 
+@router.get("/financial/goals")
+def list_goals(account_id: Optional[str] = None, status: Optional[str] = "active"):
+    """Lists personal financial goals with optional filters."""
+    return FinancialTools.get_financial_goals(account_id=account_id, status=status)
 
+
+@router.patch("/financial/goals/{goal_id}")
+def update_goal(goal_id: str, req: UpdateGoalRequest):
+    """Updates progress (current_amount) or status of a financial goal."""
+    res = FinancialTools.update_financial_goal(
+        goal_id=goal_id,
+        current_amount=req.current_amount,
+        status=req.status
+    )
+    if "error" in res:
+        raise HTTPException(status_code=400, detail=res["error"])
+    return res
+
+
+@router.post("/financial/goals/{goal_id}/simulate")
+def simulate_goal_scenario(goal_id: str, req: SimulateScenarioRequest):
+    """
+    Runs a deterministic what-if savings scenario against a goal.
+    Persists recommendation audit log to wealth_recommendations.
+    """
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute("SELECT * FROM financial_goals WHERE goal_id = %s;", (goal_id,))
+    goal_row = c.fetchone()
+    if not goal_row:
+        c.close()
+        conn.close()
+        raise HTTPException(status_code=404, detail=f"Goal '{goal_id}' not found")
+    goal = dict(goal_row)
+    account_id = goal.get("account_id")
+
+    # Run deterministic simulation
+    result = FinancialTools.simulate_savings_scenario(
+        account_id=account_id,
+        monthly_extra_savings=req.monthly_extra_savings,
+        months=req.months,
+        goal_id=goal_id
+    )
+
+    # Persist audit record to wealth_recommendations
+    rec_id = f"wrec_{uuid.uuid4().hex[:10]}"
+    now_str = datetime.now(timezone.utc).isoformat()
+    query_desc = f"Simulate +₹{req.monthly_extra_savings:,.2f}/mo for {req.months} months on '{goal['goal_name']}'"
+    tools_called = [{
+        "tool_name": "simulate_savings_scenario",
+        "arguments": {
+            "account_id": account_id,
+            "monthly_extra_savings": req.monthly_extra_savings,
+            "months": req.months,
+            "goal_id": goal_id
+        }
+    }]
+
+    c.execute("""
+        INSERT INTO wealth_recommendations (recommendation_id, goal_id, query, tools_called_json, assumptions_json, recommendation_json, model, created_at)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s);
+    """, (
+        rec_id, goal_id, query_desc,
+        json.dumps(tools_called),
+        json.dumps(result.get("assumptions", [])),
+        json.dumps(result, default=str),
+        "deterministic-engine", now_str
+    ))
+    conn.commit()
+    c.close()
+    conn.close()
+
+    result["recommendation_id"] = rec_id
+    return result
+
+
+@router.get("/financial/goals/{goal_id}/recommendations")
+def get_goal_recommendations(goal_id: str):
+    """
+    Runs deterministic rule-based next-best actions for accelerating a specific goal.
+    Persists audit log to wealth_recommendations.
+    """
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute("SELECT * FROM financial_goals WHERE goal_id = %s;", (goal_id,))
+    goal_row = c.fetchone()
+    if not goal_row:
+        c.close()
+        conn.close()
+        raise HTTPException(status_code=404, detail=f"Goal '{goal_id}' not found")
+    goal = dict(goal_row)
+    account_id = goal.get("account_id")
+
+    # Run deterministic next-best actions
+    result = FinancialTools.recommend_next_actions(account_id=account_id, goal_id=goal_id)
+
+    # Persist audit record
+    rec_id = f"wrec_{uuid.uuid4().hex[:10]}"
+    now_str = datetime.now(timezone.utc).isoformat()
+    query_desc = f"Proactive next actions for '{goal['goal_name']}'"
+    tools_called = [{
+        "tool_name": "recommend_next_actions",
+        "arguments": {"account_id": account_id, "goal_id": goal_id}
+    }]
+
+    c.execute("""
+        INSERT INTO wealth_recommendations (recommendation_id, goal_id, query, tools_called_json, assumptions_json, recommendation_json, model, created_at)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s);
+    """, (
+        rec_id, goal_id, query_desc,
+        json.dumps(tools_called),
+        json.dumps(result.get("assumptions", [])),
+        json.dumps(result, default=str),
+        "deterministic-rules", now_str
+    ))
+    conn.commit()
+    c.close()
+    conn.close()
+
+    result["recommendation_id"] = rec_id
+    return result

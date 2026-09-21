@@ -7,6 +7,7 @@ import OverviewView from './components/OverviewView';
 import DataView from './components/DataView';
 import InvestigationView from './components/InvestigationView';
 import FinancialCopilotView from './components/FinancialCopilotView';
+import GoalsView from './components/GoalsView';
 import AuditView from './components/AuditView';
 import {
   fetchHealth,
@@ -294,6 +295,10 @@ export default function App() {
 
           {activeTab === 'copilot' && (
             <FinancialCopilotView incidents={incidents} onSelectIncident={handleSelectAndInvestigate} />
+          )}
+
+          {activeTab === 'goals' && (
+            <GoalsView />
           )}
 
           {activeTab === 'audit' && (

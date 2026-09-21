@@ -182,14 +182,31 @@ class FinancialCopilotAgent:
                 "systemInstruction": system_instruction_payload,
                 "generationConfig": {"temperature": 0.1, "maxOutputTokens": 2048}
             }
-            try:
-                with httpx.Client(timeout=self.timeout_sec) as http_client:
-                    response = http_client.post(url, json=request_body, headers={"Content-Type": "application/json"})
-            except httpx.TimeoutException:
-                error_code, error_message = "AI_TIMEOUT", f"Gemini API request timed out after {self.timeout_sec}s."
-                break
-            except Exception as e:
-                error_code, error_message = "AI_PROVIDER_ERROR", f"Gemini HTTP connection failed: {str(e)}"
+            response = None
+            for attempt in range(3):
+                try:
+                    with httpx.Client(timeout=self.timeout_sec) as http_client:
+                        response = http_client.post(url, json=request_body, headers={"Content-Type": "application/json"})
+                    if response.status_code == 200:
+                        break
+                    elif response.status_code in (429, 503):
+                        import time
+                        time.sleep(1.5 * (attempt + 1))
+                        continue
+                    else:
+                        break
+                except httpx.TimeoutException:
+                    if attempt == 2:
+                        error_code, error_message = "AI_TIMEOUT", f"Gemini API request timed out after {self.timeout_sec}s."
+                    import time
+                    time.sleep(1.0)
+                except Exception as e:
+                    if attempt == 2:
+                        error_code, error_message = "AI_PROVIDER_ERROR", f"Gemini HTTP connection failed: {str(e)}"
+                    import time
+                    time.sleep(1.0)
+
+            if response is None:
                 break
 
             if response.status_code in (400, 403):

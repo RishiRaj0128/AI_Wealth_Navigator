@@ -337,7 +337,7 @@ def seed(as_of: str = None, quiet: bool = False) -> dict:
         INSERT INTO financial_accounts (account_id, name, institution, account_type, currency, metadata_json, created_at)
         VALUES (%s, %s, %s, %s, %s, %s, %s);
     """, (
-        DEMO_ACCOUNT_ID, "Alex Sharma — Primary Savings", "Meridian Bank", "bank", "INR",
+        DEMO_ACCOUNT_ID, "Alex Sharma - Primary Savings", "Meridian Bank", "bank", "INR",
         '{"source": "wealth_demo_seed", "synthetic": true}', now_str
     ))
 

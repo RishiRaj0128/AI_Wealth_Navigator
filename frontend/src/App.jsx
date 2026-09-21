@@ -11,6 +11,7 @@ import InvestigationView from './components/InvestigationView';
 import FinancialCopilotView from './components/FinancialCopilotView';
 import GoalsView from './components/GoalsView';
 import AuditView from './components/AuditView';
+import IncidentLabView from './components/IncidentLabView';
 import {
   fetchHealth,
   fetchStats,
@@ -317,6 +318,13 @@ export default function App() {
 
           {/* Inherited operations tooling, reached only through the header's
               Platform menu — kept working, kept out of the way. */}
+          {activeTab === 'incident_lab' && (
+            <IncidentLabView
+              onSelectIncident={handleSelectAndInvestigate}
+              onNavigate={setActiveTab}
+            />
+          )}
+
           {activeTab === 'incidents' && (
             <OverviewView
               stats={stats}

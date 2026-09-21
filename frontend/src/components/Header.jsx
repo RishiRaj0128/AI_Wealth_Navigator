@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { LayoutGrid, Database, Search, MessageCircle, ScrollText, Target, Settings2, Activity, RefreshCw } from 'lucide-react';
+import { LayoutGrid, Database, Search, MessageCircle, ScrollText, Target, Settings2, Activity, RefreshCw, FlaskConical } from 'lucide-react';
 
 // The four tabs that ARE the product. A first-time visitor should be able to
 // walk Overview -> Goals -> Wealth AI and have seen the whole value
@@ -17,6 +17,7 @@ const NAV_ITEMS = [
 // anyone who wants it, but it no longer competes with the wealth journey or
 // frames the app as a payment-operations console.
 const PLATFORM_NAV_ITEMS = [
+  { key: 'incident_lab', Icon: FlaskConical, label: 'Incident Lab' },
   { key: 'incidents', Icon: Activity, label: 'Operations Monitor' },
   { key: 'investigation', Icon: Search, label: 'Investigation' },
   { key: 'data', Icon: Database, label: 'Operations Data' },

@@ -906,19 +906,29 @@ async def upload_financial_document(
     return result
 
 @router.get("/financial/documents")
-def list_financial_documents():
-    """Lists all uploaded financial documents with processing status, chunk count,
-    transaction count, and whether the original file is available for preview/download."""
+def list_financial_documents(account_id: Optional[str] = None, scope: str = "account"):
+    """Lists uploaded financial documents with processing status, chunk count,
+    transaction count, and whether the original file is available for preview/download.
+    Defaults to the scoped account."""
+    from app.engine.financial_tools import _resolve_account_id
     conn = get_db_connection()
     c = conn.cursor()
-    c.execute("""
+    resolved = account_id
+    if not resolved and scope != "all":
+        resolved = _resolve_account_id(c, None)
+    
+    where_clause = "WHERE d.account_id = %s" if resolved and scope != "all" else ""
+    params = (resolved,) if resolved and scope != "all" else ()
+    c.execute(f"""
         SELECT d.document_id, d.filename, d.document_type, d.source, d.account_id,
                d.processing_status, d.error_message, d.uploaded_at, d.metadata_json,
                d.content_type, (d.raw_content IS NOT NULL) as has_raw_content,
                (SELECT COUNT(*) FROM financial_document_chunks ch WHERE ch.document_id = d.document_id) as chunk_count,
                (SELECT COUNT(*) FROM financial_transactions t WHERE t.document_id = d.document_id) as transaction_count
-        FROM financial_documents d ORDER BY d.uploaded_at DESC;
-    """)
+        FROM financial_documents d
+        {where_clause}
+        ORDER BY d.uploaded_at DESC;
+    """, params)
     rows = [dict(r) for r in c.fetchall()]
     c.close()
     conn.close()
@@ -1008,11 +1018,18 @@ def delete_financial_document(document_id: str):
     return {"status": "deleted", "document_id": document_id}
 
 @router.get("/financial/accounts")
-def list_financial_accounts():
-    """Lists all financial accounts derived from uploaded documents."""
+def list_financial_accounts(account_id: Optional[str] = None, scope: str = "account"):
+    """Lists financial accounts. Defaults to the scoped Wealth account."""
+    from app.engine.financial_tools import _resolve_account_id
     conn = get_db_connection()
     c = conn.cursor()
-    c.execute("SELECT * FROM financial_accounts ORDER BY created_at DESC;")
+    resolved = account_id
+    if not resolved and scope != "all":
+        resolved = _resolve_account_id(c, None)
+    
+    where_clause = "WHERE account_id = %s" if resolved and scope != "all" else ""
+    params = (resolved,) if resolved and scope != "all" else ()
+    c.execute(f"SELECT * FROM financial_accounts {where_clause} ORDER BY created_at DESC;", params)
     rows = [dict(r) for r in c.fetchall()]
     c.close()
     conn.close()
@@ -1047,7 +1064,7 @@ def list_financial_transactions(
     return result["transactions"]
 
 @router.get("/financial/summary")
-def get_financial_summary(account_id: Optional[str] = None):
+def get_financial_summary(account_id: Optional[str] = None, scope: str = "account"):
     """Connected-data counts PLUS the user's deterministic financial position.
 
     The original response exposed only `total_volume_inr`, which summed every
@@ -1065,14 +1082,11 @@ def get_financial_summary(account_id: Optional[str] = None):
     c = conn.cursor()
 
     # Scope the money figures to ONE account — the same account the position
-    # engine resolved. Summing every row in the table mixed this user's 162
-    # personal transactions with 67 rows left over from an operations-data
-    # import, so the Data page and the dashboard reported different totals for
-    # what the user thinks of as "my transactions".
+    # engine resolved.
     resolved_account_id = position.get("account_id") or _resolve_account_id(c, account_id)
 
-    scope_clause = "WHERE account_id = %s" if resolved_account_id else ""
-    scope_params = (resolved_account_id,) if resolved_account_id else ()
+    scope_clause = "WHERE account_id = %s" if resolved_account_id and scope != "all" else ""
+    scope_params = (resolved_account_id,) if resolved_account_id and scope != "all" else ()
 
     c.execute(f"SELECT COUNT(*) as cnt FROM financial_transactions {scope_clause};", scope_params)
     transactions = c.fetchone()["cnt"]
@@ -1084,11 +1098,18 @@ def get_financial_summary(account_id: Optional[str] = None):
     """, scope_params)
     totals = c.fetchone()
 
-    c.execute("SELECT COUNT(*) as cnt FROM financial_documents;")
+    doc_scope = "WHERE account_id = %s" if resolved_account_id and scope != "all" else ""
+    doc_ready_scope = (
+        "WHERE processing_status IN ('ready', 'partial') AND account_id = %s"
+        if resolved_account_id and scope != "all"
+        else "WHERE processing_status IN ('ready', 'partial')"
+    )
+
+    c.execute(f"SELECT COUNT(*) as cnt FROM financial_documents {doc_scope};", scope_params)
     documents = c.fetchone()["cnt"]
-    c.execute("SELECT COUNT(*) as cnt FROM financial_documents WHERE processing_status IN ('ready', 'partial');")
+    c.execute(f"SELECT COUNT(*) as cnt FROM financial_documents {doc_ready_scope};", scope_params if resolved_account_id and scope != "all" else ())
     documents_ready = c.fetchone()["cnt"]
-    c.execute("SELECT COUNT(*) as cnt FROM financial_accounts;")
+    c.execute(f"SELECT COUNT(*) as cnt FROM financial_accounts {scope_clause};", scope_params)
     accounts = c.fetchone()["cnt"]
 
     if resolved_account_id:

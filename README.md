@@ -1,1 +1,1 @@
-# Insurance-Insight-Nexus
+# AI_Wealth_Navigator

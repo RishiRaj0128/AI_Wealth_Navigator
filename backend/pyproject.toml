@@ -1,0 +1,19 @@
+[project]
+name = "wealth-navigator-backend"
+version = "2.0.0"
+description = "Wealth Navigator AI Backend"
+readme = "README.md"
+requires-python = ">=3.11"
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+ignore = [
+    "E501",  # line too long (handled by formatter / soft limit)
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]

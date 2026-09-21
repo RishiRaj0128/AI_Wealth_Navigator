@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, X, FileText, AlertTriangle, ChevronDown, ChevronUp, RotateCcw } from 'lucide-react';
+import { Plus, X, FileText, AlertTriangle, ChevronDown, ChevronUp, RotateCcw } from '../icons';
 import {
   uploadFinancialDocument, fetchFinancialDocuments, fetchFinancialSummary,
   fetchFinancialTransactions, askCopilot, fetchCopilotRuns, fetchCopilotRun,
@@ -28,7 +28,7 @@ const DOC_TYPE_OPTIONS = [
 ];
 
 const STATUS_TONE = { ready: 'verified', processing: 'accent', partial: 'medium', failed: 'critical' };
-const STATUS_LABEL = { ready: 'Ready', processing: 'Processing', partial: 'Ready — search only', failed: 'Failed' };
+const STATUS_LABEL = { ready: 'Ready', processing: 'Processing', partial: 'Ready (search only)', failed: 'Failed' };
 
 const LOADING_PHASES = [
   "Analyzing your financial data…",
@@ -122,7 +122,7 @@ function AnswerBody({ report, incidents, onSelectIncident, onViewTransactions })
                       data-cursor="hover"
                       style={{ marginTop: '8px', display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'none', border: '1px solid var(--sev-critical)', color: 'var(--sev-critical)', fontSize: '11px', fontWeight: 600, padding: '4px 10px', borderRadius: 'var(--r-sm)', cursor: 'pointer' }}>
                       <AlertTriangle size={11} strokeWidth={2} />
-                      Related MoneyOps incident found — open investigation
+                      Related MoneyOps incident found: open investigation
                     </button>
                   )}
                 </div>
@@ -142,7 +142,7 @@ function AnswerBody({ report, incidents, onSelectIncident, onViewTransactions })
                   {e.type === 'calculation' ? 'Calc' : e.type === 'document' ? 'Doc' : 'Txn'}
                 </Chip>
                 <span style={{ paddingTop: '2px' }}>
-                  {e.filename && <strong style={{ color: 'var(--cc-text-secondary)' }}>{e.filename}{e.page ? ` (p.${e.page})` : ''}{e.section ? ` — ${e.section}` : ''}: </strong>}
+                  {e.filename && <strong style={{ color: 'var(--cc-text-secondary)' }}>{e.filename}{e.page ? ` (p.${e.page})` : ''}{e.section ? ` (${e.section})` : ''}: </strong>}
                   {e.detail}
                 </span>
               </div>
@@ -231,7 +231,7 @@ export default function FinancialCopilotView({ incidents, onSelectIncident }) {
     try {
       const result = await uploadFinancialDocument(uploadFile, uploadType || null, uploadAccount || null);
       if (result.processing_status === 'ready') {
-        setUploadNotice({ type: 'success', text: `${result.filename} indexed — ${result.transactions_extracted} transactions extracted, ${result.chunks_embedded}/${result.chunks_created} chunks embedded.` });
+        setUploadNotice({ type: 'success', text: `${result.filename} indexed: ${result.transactions_extracted} transactions extracted, ${result.chunks_embedded}/${result.chunks_created} chunks embedded.` });
       } else {
         setUploadNotice({ type: 'error', text: `${result.filename} failed to process: ${result.error_message || 'Unknown error'}` });
       }
@@ -372,7 +372,7 @@ export default function FinancialCopilotView({ incidents, onSelectIncident }) {
           <p className="cc-section-eyebrow" style={{ color: 'var(--cc-accent)' }}>Financial Intelligence Copilot</p>
           <h1 className="text-page-title">What are we investigating?</h1>
           <p className="cc-page-desc">
-            Hybrid retrieval over your uploaded statements and policies — structured PostgreSQL analytics,
+            Hybrid retrieval over your uploaded statements and policies: structured PostgreSQL analytics,
             document RAG, and Gemini reasoning, always grounded in real evidence.
           </p>
         </div>
@@ -512,8 +512,8 @@ export default function FinancialCopilotView({ incidents, onSelectIncident }) {
                     {previewDoc.transactions.map(t => (
                       <tr key={t.transaction_id} style={{ borderBottom: '1px solid var(--line-hair)' }}>
                         <td className="text-data" style={{ padding: '8px' }}>{new Date(t.transaction_date).toLocaleDateString()}</td>
-                        <td style={{ padding: '8px', color: 'var(--cc-text-primary)' }}>{t.merchant || '—'}</td>
-                        <td style={{ padding: '8px', color: 'var(--cc-text-tertiary)' }}>{t.category || '—'}</td>
+                        <td style={{ padding: '8px', color: 'var(--cc-text-primary)' }}>{t.merchant || '-'}</td>
+                        <td style={{ padding: '8px', color: 'var(--cc-text-tertiary)' }}>{t.category || '-'}</td>
                         <td style={{ padding: '8px', color: t.transaction_type === 'credit' ? 'var(--state-verified)' : 'var(--sev-critical)' }}>{t.transaction_type}</td>
                         <td className="cc-numeric" style={{ padding: '8px', textAlign: 'right', color: 'var(--cc-text-primary)', fontWeight: 600 }}>₹{Number(t.amount).toLocaleString('en-IN')}</td>
                       </tr>
@@ -548,7 +548,7 @@ export default function FinancialCopilotView({ incidents, onSelectIncident }) {
         {conversation.length === 0 && (
           <div style={{ padding: '4px 0 24px' }}>
             <p style={{ margin: '0 0 14px', fontSize: '13px', color: 'var(--cc-text-tertiary)' }}>
-              Ask something specific — the Copilot reasons over structured PostgreSQL analytics and your uploaded documents together.
+              Ask something specific. The Copilot reasons over structured PostgreSQL analytics and your uploaded documents together.
             </p>
             <div className="cc-suggestion-list">
               {SUGGESTED_QUESTIONS.map(q => (
@@ -649,8 +649,8 @@ export default function FinancialCopilotView({ incidents, onSelectIncident }) {
                 {transactionList.map(t => (
                   <tr key={t.transaction_id} style={{ borderBottom: '1px solid var(--line-hair)' }}>
                     <td className="text-data" style={{ padding: '8px' }}>{new Date(t.transaction_date).toLocaleDateString()}</td>
-                    <td style={{ padding: '8px', color: 'var(--cc-text-primary)' }}>{t.merchant || '—'}</td>
-                    <td style={{ padding: '8px', color: 'var(--cc-text-tertiary)' }}>{t.category || '—'}</td>
+                    <td style={{ padding: '8px', color: 'var(--cc-text-primary)' }}>{t.merchant || '-'}</td>
+                    <td style={{ padding: '8px', color: 'var(--cc-text-tertiary)' }}>{t.category || '-'}</td>
                     <td style={{ padding: '8px', color: t.transaction_type === 'credit' ? 'var(--state-verified)' : 'var(--sev-critical)' }}>{t.transaction_type}</td>
                     <td className="cc-numeric" style={{ padding: '8px', textAlign: 'right', color: 'var(--cc-text-primary)', fontWeight: 600 }}>₹{Number(t.amount).toLocaleString('en-IN')}</td>
                   </tr>

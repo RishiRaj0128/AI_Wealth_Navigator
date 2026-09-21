@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { LayoutGrid, Database, Search, MessageCircle, ScrollText, Target } from 'lucide-react';
+import { LayoutGrid, Database, Search, MessageCircle, ScrollText, Target, RefreshCw } from '../icons';
 
 const NAV_ITEMS = [
   { key: 'overview', Icon: LayoutGrid, label: 'Financial Overview' },
@@ -65,14 +65,14 @@ function PendingBadge({ count }) {
             exit={{ opacity: 0 }}
             transition={{ duration: 0.6, ease: 'easeOut' }}
             style={{
-              position: 'absolute', inset: '-2px', borderRadius: '10px',
+              position: 'absolute', inset: '-2px', borderRadius: '4px',
               border: '1px solid rgba(239, 68, 68, 0.9)', pointerEvents: 'none'
             }}
           />
         )}
       </AnimatePresence>
       <span style={{
-        padding: '1px 6px', borderRadius: '10px', background: '#ef4444', color: '#fff',
+        padding: '1px 6px', borderRadius: '4px', background: '#ef4444', color: '#fff',
         fontSize: '10px', fontWeight: '800', whiteSpace: 'nowrap',
         display: 'inline-flex', alignItems: 'center', gap: '3px'
       }}>
@@ -122,8 +122,6 @@ function NavTab({ item, isActive, onClick }) {
   );
 }
 
-const CURSOR_PREF_KEY = 'moneyops-cc-cursor-enabled';
-
 export default function Header({
   activeTab,
   onTabChange,
@@ -132,9 +130,7 @@ export default function Header({
   aiStatus,
   pendingInvestigationCount = 0,
   investigatedCount = 0,
-  onRefresh,
-  cursorEnabled = true,
-  onToggleCursor
+  onRefresh
 }) {
   const [scrolled, setScrolled] = useState(false);
 
@@ -154,14 +150,12 @@ export default function Header({
   return (
     <header style={{
       borderBottom: '1px solid var(--border)',
-      background: scrolled ? 'rgba(10, 14, 18, 0.92)' : 'rgba(15, 23, 42, 0.85)',
-      backdropFilter: scrolled ? 'blur(16px)' : 'blur(10px)',
+      background: 'var(--ink-page)',
       position: 'sticky',
       top: 0,
       zIndex: 100,
       padding: '0 20px',
-      transition: 'background 220ms var(--ease-inout), backdrop-filter 220ms var(--ease-inout), box-shadow 220ms var(--ease-inout)',
-      boxShadow: scrolled ? '0 1px 0 rgba(0,0,0,0.4)' : 'none'
+      transition: 'height 220ms var(--ease-inout)'
     }}>
       <div style={{
         display: 'flex',
@@ -178,13 +172,12 @@ export default function Header({
           <div style={{
             width: '34px',
             height: '34px',
-            borderRadius: '8px',
-            background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+            borderRadius: '6px',
+            background: 'var(--state-verified)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            boxShadow: '0 0 12px rgba(16, 185, 129, 0.4)',
-            color: '#fff',
+            color: '#080B0E',
             fontWeight: '800',
             fontSize: '16px',
             flexShrink: 0
@@ -199,7 +192,7 @@ export default function Header({
               <span style={{
                 fontSize: '10px',
                 padding: '2px 8px',
-                borderRadius: '12px',
+                borderRadius: '4px',
                 background: 'rgba(16, 185, 129, 0.15)',
                 color: '#10b981',
                 fontWeight: '700'
@@ -276,7 +269,7 @@ export default function Header({
                   {investigatedCount > 0 && (
                     <span style={{
                       padding: '1px 6px',
-                      borderRadius: '10px',
+                      borderRadius: '4px',
                       background: 'rgba(52, 211, 153, 0.2)',
                       color: '#34d399',
                       fontSize: '10px',
@@ -310,42 +303,24 @@ export default function Header({
             <span className="cc-header-status-text">Gemini: <strong style={{ color: 'var(--text)' }}>{isGeminiConfigured ? geminiModel : 'Offline'}</strong></span>
           </div>
 
-          {/* Custom-cursor settings toggle — persisted locally; the native
-              cursor remains fully functional whether this is on or off. */}
-          <button
-            onClick={onToggleCursor}
-            title={cursorEnabled ? 'Disable custom cursor' : 'Enable custom cursor'}
-            aria-pressed={cursorEnabled}
-            style={{
-              padding: '6px 8px',
-              borderRadius: '6px',
-              background: cursorEnabled ? 'rgba(76, 111, 255, 0.12)' : 'rgba(255, 255, 255, 0.03)',
-              border: '1px solid var(--border)',
-              color: cursorEnabled ? 'var(--cc-accent)' : 'var(--text-muted)',
-              cursor: 'pointer',
-              fontSize: '12px',
-              flexShrink: 0
-            }}
-          >
-            ◎
-          </button>
-
           {/* Refresh Button */}
           <button
             onClick={onRefresh}
             title="Refresh All Data"
             style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
               padding: '6px 8px',
-              borderRadius: '6px',
+              borderRadius: '4px',
               background: 'rgba(255, 255, 255, 0.03)',
               border: '1px solid var(--border)',
               color: 'var(--text-muted)',
               cursor: 'pointer',
-              fontSize: '12px',
               flexShrink: 0
             }}
           >
-            ↻
+            <RefreshCw size={13} />
           </button>
 
         </div>
@@ -354,5 +329,3 @@ export default function Header({
     </header>
   );
 }
-
-export { CURSOR_PREF_KEY };

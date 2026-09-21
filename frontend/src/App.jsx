@@ -2,13 +2,14 @@ import React, { useState, useEffect, useRef } from 'react';
 import Header from './components/Header';
 import RouteProgress from './components/RouteProgress';
 import PageTransition from './components/PageTransition';
-import CustomCursor from './components/CustomCursor';
 import OverviewView from './components/OverviewView';
 import DataView from './components/DataView';
 import InvestigationView from './components/InvestigationView';
 import FinancialCopilotView from './components/FinancialCopilotView';
 import GoalsView from './components/GoalsView';
 import AuditView from './components/AuditView';
+import TermsOfServiceView from './components/TermsOfServiceView';
+import PrivacyPolicyView from './components/PrivacyPolicyView';
 import {
   fetchHealth,
   fetchStats,
@@ -31,26 +32,6 @@ export default function App() {
   const [isDetecting, setIsDetecting] = useState(false);
   const [notification, setNotification] = useState(null);
 
-  // Custom-cursor preference (shell, Phase 2): defaults on, persisted
-  // locally, toggled from the header. Guards inside CustomCursor itself
-  // (pointer:fine, prefers-reduced-motion) decide whether it actually
-  // mounts regardless of this preference.
-  const [cursorEnabled, setCursorEnabled] = useState(() => {
-    try {
-      const stored = localStorage.getItem('moneyops-cc-cursor-enabled');
-      return stored === null ? true : stored === 'true';
-    } catch {
-      return true;
-    }
-  });
-  useEffect(() => {
-    try {
-      localStorage.setItem('moneyops-cc-cursor-enabled', String(cursorEnabled));
-    } catch {
-      // localStorage unavailable (private mode, etc.) — preference just
-      // won't persist across reloads; the toggle still works this session.
-    }
-  }, [cursorEnabled]);
 
   // Picks which incident to show when nothing has been explicitly selected yet.
   // `ORDER BY detected_at DESC` alone is wrong here: detected_at gets refreshed
@@ -191,7 +172,7 @@ export default function App() {
       const res = await triggerAnomalyDetection();
       setNotification({
         type: "success",
-        text: `✓ Detection scan complete. ${res.anomalies_detected} anomalies evaluated across ${res.records_analyzed} PostgreSQL records.`
+        text: `Detection scan complete. ${res.anomalies_detected} anomalies evaluated across ${res.records_analyzed} PostgreSQL records.`
       });
       await loadData();
     } catch (e) {
@@ -229,12 +210,9 @@ export default function App() {
         pendingInvestigationCount={incidents.filter(i => i.status !== 'resolved' && i.status !== 'rejected').length}
         investigatedCount={incidents.filter(i => i.status === 'resolved' || i.status === 'rejected').length}
         onRefresh={loadData}
-        cursorEnabled={cursorEnabled}
-        onToggleCursor={() => setCursorEnabled(v => !v)}
       />
 
       <RouteProgress routeKey={activeTab} />
-      <CustomCursor enabled={cursorEnabled} />
 
       {/* 2. GLOBAL NOTIFICATION BANNER */}
       {notification && (
@@ -304,10 +282,73 @@ export default function App() {
           {activeTab === 'audit' && (
             <AuditView />
           )}
+
+          {activeTab === 'terms' && (
+            <TermsOfServiceView onBack={() => setActiveTab('overview')} />
+          )}
+
+          {activeTab === 'privacy' && (
+            <PrivacyPolicyView onBack={() => setActiveTab('overview')} />
+          )}
         </PageTransition>
       </main>
 
-
+      {/* 4. PLATFORM FOOTER */}
+      <footer style={{
+        maxWidth: "1600px",
+        margin: "48px auto 0",
+        padding: "24px",
+        borderTop: "1px solid var(--border-subtle)",
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        flexWrap: "wrap",
+        gap: "16px",
+        fontSize: "12px",
+        color: "var(--text-tertiary)"
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+          <span style={{ fontWeight: 600, color: "var(--text-secondary)" }}>Wealth Navigator AI</span>
+          <span>•</span>
+          <span>Personal Wealth Intelligence Platform</span>
+          <span>•</span>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+            <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "#10b981" }} />
+            Systems Nominal
+          </span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: "20px" }}>
+          <button
+            onClick={() => setActiveTab('terms')}
+            style={{
+              background: "none",
+              border: "none",
+              padding: 0,
+              fontSize: "12px",
+              color: activeTab === 'terms' ? "var(--text)" : "var(--text-tertiary)",
+              cursor: "pointer",
+              textDecoration: "underline"
+            }}
+          >
+            Terms of Service
+          </button>
+          <button
+            onClick={() => setActiveTab('privacy')}
+            style={{
+              background: "none",
+              border: "none",
+              padding: 0,
+              fontSize: "12px",
+              color: activeTab === 'privacy' ? "var(--text)" : "var(--text-tertiary)",
+              cursor: "pointer",
+              textDecoration: "underline"
+            }}
+          >
+            Privacy Policy
+          </button>
+          <span>v1.0.0</span>
+        </div>
+      </footer>
     </div>
   );
 }

@@ -1,0 +1,45 @@
+version: "3.8"
+
+# LOCAL DEVELOPMENT ONLY
+# Cloud deployments use AWS ECS Fargate + RDS PostgreSQL via Terraform (see infra/)
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: wealth_navigator_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+      POSTGRES_DB: ${POSTGRES_DB:-moneyops_v2}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-moneyops_v2}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: wealth_navigator_backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-password}@db:5432/${POSTGRES_DB:-moneyops_v2}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-fake_gemini_api_key_placeholder}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.5-flash-lite}
+      RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-fake_rzp_key_placeholder}
+      RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:-fake_rzp_secret_placeholder}
+      RAZORPAY_WEBHOOK_SECRET: ${RAZORPAY_WEBHOOK_SECRET:-fake_rzp_webhook_placeholder}
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  postgres_data:

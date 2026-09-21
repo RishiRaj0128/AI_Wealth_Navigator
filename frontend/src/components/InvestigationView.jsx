@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, ChevronDown, ChevronUp, Check, Users, Target, Zap } from 'lucide-react';
+import { Search, ChevronDown, ChevronUp, Check, Users, Target, Zap } from '../icons';
 import {
   runInvestigation,
   fetchIncidentInvestigations,
@@ -113,7 +113,7 @@ export default function InvestigationView({ incident, incidents = [], onSelectIn
     } catch (e) {
       console.warn("Could not load similar cases:", e);
       setSimilarCases([]);
-      setSimilarCasesError("Case-memory similarity lookup failed — no similar incidents could be retrieved.");
+      setSimilarCasesError("Case-memory similarity lookup failed: no similar incidents could be retrieved.");
     }
   };
 
@@ -147,7 +147,7 @@ export default function InvestigationView({ incident, incidents = [], onSelectIn
         if (backing && backing.investigation_id !== toDisplay?.investigation_id) {
           if (toDisplay && toDisplay.status !== 'completed') {
             setStaleInvestigationNotice(
-              `A more recent re-investigation attempt (${toDisplay.investigation_id}) ${toDisplay.status === 'failed' ? 'failed' : `is ${toDisplay.status}`} — showing investigation ${backing.investigation_id}, the one this action is actually based on.`
+              `A more recent re-investigation attempt (${toDisplay.investigation_id}) ${toDisplay.status === 'failed' ? 'failed' : `is ${toDisplay.status}`}: showing investigation ${backing.investigation_id}, the one this action is actually based on.`
             );
           }
           toDisplay = backing;
@@ -441,8 +441,8 @@ export default function InvestigationView({ incident, incidents = [], onSelectIn
     failureRate != null && { label: primaryRateLabel, value: `${failureRate}%`, detail: ratio != null ? `${ratio}x baseline` : null },
     peerRate != null && { label: baselineRateLabel, value: `${peerRate}%`, detail: isMerchantIncident && ev.baseline_refund_rate_pct != null ? "this merchant's historical rate" : 'healthy peer average' },
     topErrors != null && { label: topErrorsLabel, value: totalFailed != null ? `${topErrors} / ${totalFailed}` : String(topErrors), detail: topErrors != null && totalFailed ? `${((topErrors / totalFailed) * 100).toFixed(2)}% concentration` : null },
-    { label: isMerchantIncident ? 'Target merchant' : 'Affected merchants', value: isMerchantIncident ? (incident.target_entity_id || '—') : (merchantCount != null ? merchantCount : '—'), detail: isMerchantIncident ? 'single-merchant incident' : 'impacted across categories' },
-    { label: 'Potential exposure', value: exposureAmt != null ? `₹${Number(exposureAmt).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '—', detail: 'unresolved transaction value' },
+    { label: isMerchantIncident ? 'Target merchant' : 'Affected merchants', value: isMerchantIncident ? (incident.target_entity_id || '-') : (merchantCount != null ? merchantCount : '-'), detail: isMerchantIncident ? 'single-merchant incident' : 'impacted across categories' },
+    { label: 'Potential exposure', value: exposureAmt != null ? `₹${Number(exposureAmt).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '-', detail: 'unresolved transaction value' },
   ].filter(Boolean);
 
   // Visible workflow stage: detected -> investigating -> investigated ->
@@ -450,12 +450,14 @@ export default function InvestigationView({ incident, incidents = [], onSelectIn
   // Nothing here implies "resolved" or "nothing found" just because a panel is empty.
   const workflowStage = (() => {
     if (investigating) return { tone: 'accent', label: 'Investigating…' };
-    if (!investigationData) return { tone: 'neutral', label: 'Detected — not yet investigated' };
+    if (!investigationData) return { tone: 'neutral', label: 'Detected (not yet investigated)' };
     if (investigationData.status === 'running') return { tone: 'accent', label: 'Investigating…' };
     if (investigationData.status === 'failed') return { tone: 'critical', label: 'Investigation attempt failed' };
-    if (!primaryAction) return { tone: 'verified', label: 'Investigated — recommendation available' };
+    if (incident.status === 'resolved') return { tone: 'verified', label: 'Resolved' };
+    if (incident.status === 'rejected') return { tone: 'neutral', label: 'Rejected' };
+    if (!primaryAction) return { tone: 'verified', label: 'Investigated (recommendation available)' };
     if (primaryAction.status === 'pending_approval') return { tone: 'medium', label: 'Awaiting human approval' };
-    if (primaryAction.status === 'approved') return { tone: 'accent', label: 'Approved — ready to execute' };
+    if (primaryAction.status === 'approved') return { tone: 'accent', label: 'Approved (ready to execute)' };
     if (primaryAction.status === 'executed') return { tone: 'verified', label: 'Executed (safe simulation)' };
     if (primaryAction.status === 'rejected') return { tone: 'neutral', label: 'Rejected by human' };
     return { tone: 'verified', label: 'Investigated' };
@@ -511,7 +513,7 @@ export default function InvestigationView({ incident, incidents = [], onSelectIn
                     <button
                       onClick={handleInvestigate}
                       disabled={investigating || !isGeminiConnected}
-                      title="Re-runs Gemini against current evidence. Secondary/debugging use — does not undo the existing recommendation or approval."
+                      title="Re-runs Gemini against current evidence. Secondary/debugging use: does not undo the existing recommendation or approval."
                       style={{ background: 'none', border: 'none', color: 'var(--cc-text-tertiary)', cursor: 'pointer', fontSize: '11.5px', fontWeight: 600, padding: '2px' }}
                       data-cursor="hover"
                     >
@@ -542,9 +544,9 @@ export default function InvestigationView({ incident, incidents = [], onSelectIn
             {investigationData?.what_happened || incident.description || "No description recorded for this incident yet."}
           </p>
           <div style={{ height: '1px', background: 'var(--line-hair)', margin: '24px 0' }} />
-          <p className="cc-section-eyebrow" style={{ color: 'var(--sev-medium)', marginBottom: '8px' }}>Why — root cause</p>
+          <p className="cc-section-eyebrow" style={{ color: 'var(--sev-medium)', marginBottom: '8px' }}>Why: root cause</p>
           <p style={{ margin: 0, fontSize: '15px', lineHeight: '1.6', color: 'var(--cc-text-secondary)', maxWidth: '760px' }}>
-            {investigationData?.why_it_happened || incident.primary_signal || 'Root cause not yet determined — run "Investigate with Gemini" above.'}
+            {investigationData?.why_it_happened || incident.primary_signal || 'Root cause not yet determined. Run "Investigate with Gemini" above.'}
           </p>
         </div>
 
@@ -568,7 +570,7 @@ export default function InvestigationView({ incident, incidents = [], onSelectIn
         {/* CASE MEMORY */}
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
-            <p className="cc-section-eyebrow" style={{ margin: 0 }}>Case memory — historical precedent</p>
+            <p className="cc-section-eyebrow" style={{ margin: 0 }}>Case memory: historical precedent</p>
             {topSimilarCase && (
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: 600, color: 'var(--state-verified)' }}>
                 <Target size={13} strokeWidth={2} />
@@ -591,7 +593,7 @@ export default function InvestigationView({ incident, incidents = [], onSelectIn
               {topSimilarCase.factors && (
                 <div style={{ fontSize: '11.5px', color: 'var(--cc-text-tertiary)', margin: '10px 0', padding: '10px 12px', background: 'var(--ink-sunken)', borderRadius: 'var(--r-sm)' }}>
                   <div style={{ fontWeight: 600, color: 'var(--cc-text-secondary)', marginBottom: '6px' }}>
-                    {topSimilarCase.similarity_score_pct}% is a weighted composite, not raw semantic similarity — breakdown:
+                    {topSimilarCase.similarity_score_pct}% is a weighted composite, not raw semantic similarity. Breakdown:
                   </div>
                   <div>Raw embedding cosine similarity: <strong>{topSimilarCase.cosine_similarity}</strong> (contributes {topSimilarCase.factors.cosine_sim_contrib} pts)</div>
                   <div>Incident type match: {topSimilarCase.factors.type_match} pts · Entity match: {topSimilarCase.factors.entity_match} pts · Error code match: {topSimilarCase.factors.error_code_match} pts · Severity match: {topSimilarCase.factors.severity_match} pts</div>
@@ -645,7 +647,7 @@ export default function InvestigationView({ incident, incidents = [], onSelectIn
                   </div>
                 ) : (
                   <div style={{ fontSize: '12px', color: 'var(--cc-text-tertiary)' }}>
-                    No per-merchant breakdown was returned by this investigation's <span className="text-data">get_affected_merchants</span> tool call yet — run or re-run the investigation to populate this list from real PostgreSQL data.
+                    No per-merchant breakdown was returned by this investigation's <span className="text-data">get_affected_merchants</span> tool call yet. Run or re-run the investigation to populate this list from real PostgreSQL data.
                   </div>
                 )}
               </div>
@@ -670,11 +672,11 @@ export default function InvestigationView({ incident, incidents = [], onSelectIn
                 : 'Run "Investigate with Gemini" to compute evidence confidence from real signals.'}
             </p>
             <div style={{ fontSize: '11.5px', color: 'var(--cc-text-tertiary)', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <div>Anomaly strength (25%) — IsolationForest score {incident.anomaly_score != null ? incident.anomaly_score : '—'}</div>
-              <div>Peer deviation (25%) — {failureRate != null && ratio != null && peerRate != null ? `${failureRate}% is ${ratio}x peer baseline (${peerRate}%)` : 'No evidence recorded'}</div>
-              <div>Concentration (20%) — {topErrors != null && totalFailed ? `${((topErrors / totalFailed) * 100).toFixed(2)}% share are ${topErrorsLabel.toLowerCase()}` : 'No evidence recorded'}</div>
-              <div>Sample volume (15%) — {totalFailed != null ? `${totalFailed} failed transactions analyzed` : 'No evidence recorded'}</div>
-              <div>Merchant breadth (15%) — {merchantCount != null ? `corroborated across ${merchantCount} distinct merchants` : 'No evidence recorded'}</div>
+              <div>Anomaly strength (25%): IsolationForest score {incident.anomaly_score != null ? incident.anomaly_score : '-'}</div>
+              <div>Peer deviation (25%): {failureRate != null && ratio != null && peerRate != null ? `${failureRate}% is ${ratio}x peer baseline (${peerRate}%)` : 'No evidence recorded'}</div>
+              <div>Concentration (20%): {topErrors != null && totalFailed ? `${((topErrors / totalFailed) * 100).toFixed(2)}% share are ${topErrorsLabel.toLowerCase()}` : 'No evidence recorded'}</div>
+              <div>Sample volume (15%): {totalFailed != null ? `${totalFailed} failed transactions analyzed` : 'No evidence recorded'}</div>
+              <div>Merchant breadth (15%): {merchantCount != null ? `corroborated across ${merchantCount} distinct merchants` : 'No evidence recorded'}</div>
             </div>
           </div>
 
@@ -686,7 +688,7 @@ export default function InvestigationView({ incident, incidents = [], onSelectIn
               <span style={{ fontSize: '11px', color: 'var(--sev-medium)', fontWeight: 600 }}>Human approval required</span>
             </div>
             <p style={{ margin: 0, fontSize: '14px', lineHeight: '1.6', color: 'var(--cc-text-primary)' }}>
-              {investigationData?.recommendation || 'No AI recommendation yet — run "Investigate with Gemini" above to generate one from real evidence.'}
+              {investigationData?.recommendation || 'No AI recommendation yet. Run "Investigate with Gemini" above to generate one from real evidence.'}
             </p>
           </div>
         </div>
@@ -697,7 +699,7 @@ export default function InvestigationView({ incident, incidents = [], onSelectIn
             <Chip tone="critical">Risk: red · human approval required</Chip>
             {primaryAction && (
               <Chip tone={primaryAction.status === 'executed' ? 'verified' : primaryAction.status === 'approved' ? 'accent' : primaryAction.status === 'rejected' ? 'neutral' : 'medium'}>
-                {primaryAction.status === 'executed' ? 'Executed — simulation only' : primaryAction.status === 'approved' ? 'Approved by human' : primaryAction.status === 'rejected' ? 'Rejected' : 'Pending approval'}
+                {primaryAction.status === 'executed' ? 'Executed (simulation only)' : primaryAction.status === 'approved' ? 'Approved by human' : primaryAction.status === 'rejected' ? 'Rejected' : 'Pending approval'}
               </Chip>
             )}
           </div>

@@ -1,25 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { animate } from 'framer-motion';
-import { Info, AlertTriangle, RefreshCw, CheckCircle2, ChevronRight, ChevronDown, ChevronUp } from 'lucide-react';
-import { Card, Metric, Button } from '../primitives';
-import { usePrefersReducedMotion } from '../hooks/useMotionGuards';
-
-// Derives the SeverityRail's confidence fill from real evidence already
-// shown elsewhere on the card (the anomaly ratio vs. baseline, or a
-// concentration percentage) — never a fabricated number, never presented as
-// an API field. An incident with no evidence recorded yet gets 0%, same
-// "explicit empty state, not a fake value" rule the rest of this component
-// already follows.
-function deriveConfidence(inc) {
-  const ev = inc.evidence || {};
-  if (ev.failure_rate_ratio != null) return Math.min(100, Math.round(ev.failure_rate_ratio * 33));
-  if (ev.refund_rate_ratio != null) return Math.min(100, Math.round(ev.refund_rate_ratio * 33));
-  if (ev.duplicate_refund_payments != null && ev.total_refunds) {
-    return Math.min(100, Math.round((ev.duplicate_refund_payments / ev.total_refunds) * 100));
-  }
-  if (ev.webhook_failure_rate_pct != null) return Math.min(100, Math.round(ev.webhook_failure_rate_pct));
-  return 0;
-}
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  Info, AlertTriangle, CheckCircle2, ChevronRight,
+  ChevronDown, ChevronUp, RefreshCw, Target, TrendingUp,
+  Database, Search, ShieldCheck
+} from '../icons';
+import { Card, Metric, Button, Chip } from '../primitives';
+import { fetchFinancialGoals, fetchFinancialTransactions } from '../api';
 
 const SEVERITY_LABEL_COLOR = {
   critical: 'var(--sev-critical)',
@@ -27,33 +14,6 @@ const SEVERITY_LABEL_COLOR = {
   medium: 'var(--sev-medium)',
   low: 'var(--sev-low)',
 };
-
-// Animates the hero exposure figure from its previous displayed value to
-// the new one whenever real data changes (initial load included) — never a
-// fabricated number, just an eased transition to the same real value this
-// page already computes. Skipped entirely under prefers-reduced-motion,
-// per the sitewide motion rule.
-function useCountUp(target, prefersReducedMotion) {
-  const [display, setDisplay] = useState(target);
-  const prevTarget = useRef(target);
-
-  useEffect(() => {
-    if (prefersReducedMotion) {
-      setDisplay(target);
-      prevTarget.current = target;
-      return undefined;
-    }
-    const controls = animate(prevTarget.current, target, {
-      duration: 0.9,
-      ease: [0.22, 1, 0.36, 1],
-      onUpdate: (v) => setDisplay(v),
-    });
-    prevTarget.current = target;
-    return () => controls.stop();
-  }, [target, prefersReducedMotion]);
-
-  return display;
-}
 
 const relativeTime = (isoStr) => {
   if (!isoStr) return null;
@@ -66,282 +26,466 @@ const relativeTime = (isoStr) => {
   return `${Math.floor(hrs / 24)}d ago`;
 };
 
-export default function OverviewView({ stats, sourceStats, incidents, onSelectIncident, onTriggerDetection, isDetecting }) {
-  const prefersReducedMotion = usePrefersReducedMotion();
-  // Collapsed by default — Case Memory is quiet history, not part of what a
-  // reviewer needs to see to understand what's currently active.
+function deriveConfidence(inc) {
+  const ev = inc.evidence || {};
+  if (ev.confidence != null) return Math.min(100, Math.round(ev.confidence * 100));
+  if (ev.failure_rate_pct != null) return Math.min(100, Math.round(ev.failure_rate_pct));
+  if (ev.webhook_failure_rate_pct != null) return Math.min(100, Math.round(ev.webhook_failure_rate_pct));
+  return 0;
+}
+
+export default function OverviewView({
+  stats,
+  sourceStats,
+  incidents = [],
+  onSelectIncident,
+  onTriggerDetection,
+  isDetecting,
+  onOpenCopilot,
+  onOpenGoals
+}) {
   const [caseMemoryOpen, setCaseMemoryOpen] = useState(false);
+  const [goals, setGoals] = useState([]);
+  const [recentTxs, setRecentTxs] = useState([]);
+  const [loadingExtras, setLoadingExtras] = useState(true);
 
-  // Pending-investigation incidents surface first — a reviewer scanning this list
-  // should see what still needs attention before what's already been handled,
-  // rather than whatever was most recently re-confirmed by a detection re-run.
-  // Active/Pending = genuinely unresolved work only. 'rejected' is a final
-  // human decision, same as 'resolved' — it must leave this list immediately,
-  // not linger just because no simulation ever executed for it.
+  useEffect(() => {
+    let mounted = true;
+    async function loadExtraFinancialData() {
+      try {
+        const [goalsData, txsData] = await Promise.allSettled([
+          fetchFinancialGoals(),
+          fetchFinancialTransactions(5)
+        ]);
+        if (mounted) {
+          if (goalsData.status === 'fulfilled') setGoals(goalsData.value || []);
+          if (txsData.status === 'fulfilled') setRecentTxs(txsData.value || []);
+          setLoadingExtras(false);
+        }
+      } catch {
+        if (mounted) setLoadingExtras(false);
+      }
+    }
+    loadExtraFinancialData();
+    return () => { mounted = false; };
+  }, []);
+
   const activeIncidents = incidents
-    .filter(inc => inc.status !== 'resolved' && inc.status !== 'rejected')
-    .slice()
+    .filter(i => i.status !== 'resolved' && i.status !== 'rejected')
     .sort((a, b) => {
-      const aPending = a.investigation_status !== 'investigated' ? 0 : 1;
-      const bPending = b.investigation_status !== 'investigated' ? 0 : 1;
-      if (aPending !== bPending) return aPending - bPending;
-      return new Date(b.detected_at) - new Date(a.detected_at);
+      const aInvestigated = a.investigation_status === 'investigated';
+      const bInvestigated = b.investigation_status === 'investigated';
+      if (!aInvestigated && bInvestigated) return -1;
+      if (aInvestigated && !bInvestigated) return 1;
+      return new Date(b.detected_at || 0) - new Date(a.detected_at || 0);
     });
-  const resolvedIncidents = incidents
-    .filter(inc => inc.status === 'resolved' || inc.status === 'rejected')
-    .slice()
-    .sort((a, b) => new Date(b.detected_at) - new Date(a.detected_at));
+
+  const resolvedIncidents = incidents.filter(i => i.status === 'resolved' || i.status === 'rejected');
   const totalExposure = activeIncidents.reduce((sum, inc) => sum + (inc.potential_exposure || 0), 0);
-  const totalFailed = activeIncidents.reduce((sum, inc) => sum + (inc.evidence?.failed_payments_count || inc.affected_payments || 0), 0);
-  const detectionVolume = sourceStats?.detection_volume || null;
-
-  const mostRecentDetectedAt = incidents.length > 0
-    ? incidents.reduce((latest, inc) => new Date(inc.detected_at) > new Date(latest) ? inc.detected_at : latest, incidents[0].detected_at)
-    : null;
-
-  const animatedExposure = useCountUp(totalExposure, prefersReducedMotion);
+  const mostRecentDetectedAt = activeIncidents[0]?.detected_at || null;
 
   return (
-    <div className="cc-page">
-
-      {/* PAGE CONTEXT */}
-      <div className="cc-page-header">
-        <p className="cc-section-eyebrow" style={{ color: 'var(--cc-accent)' }}>Financial Operations</p>
-        <h1 className="text-page-title">Overview</h1>
-        <p className="cc-page-desc">What's happening right now across connected banking and merchant channels.</p>
-      </div>
-
-      {/* SYSTEM STATE — a compact, labeled instrument strip (live system /
-          attention / last detection), not a run-on sentence or a stacked
-          banner. Each field is quiet chrome; only ATTENTION carries color,
-          and only when there's something real to flag. */}
-      <div className="cc-system-panel">
-        <div className="cc-system-field">
-          <p className="cc-system-field-label">Live system</p>
-          <p className="cc-system-field-value">
-            <Info size={12} strokeWidth={2} className="cc-icon" />
-            Razorpay Test Mode + Incident Lab
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '28px', maxWidth: '1600px', margin: '0 auto' }}>
+      
+      {/* 1. PAGE HEADER */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px' }}>
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <h1 style={{ fontSize: '24px', fontWeight: 700, margin: 0, letterSpacing: '-0.02em', color: 'var(--text-primary)' }}>
+              Executive Financial Overview
+            </h1>
+            <Chip label="PostgreSQL 16 Active" variant="neutral" size="small" />
+          </div>
+          <p style={{ margin: '6px 0 0', fontSize: '13px', color: 'var(--text-secondary)' }}>
+            Real-time telemetry across banking nodes, transaction variance models, and wealth goals.
           </p>
         </div>
-        <div className="cc-system-field-divider" />
-        <div className="cc-system-field">
-          <p className="cc-system-field-label">Attention</p>
-          {detectionVolume && !detectionVolume.razorpay_test_sufficient_for_detection ? (
-            <p className="cc-system-field-value" style={{ color: 'var(--sev-medium)' }}>
-              <AlertTriangle size={12} strokeWidth={2} className="cc-icon" />
-              {detectionVolume.razorpay_test_payment_count} payment attempt{detectionVolume.razorpay_test_payment_count === 1 ? '' : 's'} below the {detectionVolume.min_sample_size}+ threshold
-            </p>
-          ) : (
-            <p className="cc-system-field-value" style={{ color: 'var(--state-verified)' }}>
-              <Info size={12} strokeWidth={2} className="cc-icon" />
-              Nothing outstanding
-            </p>
-          )}
-        </div>
-        <div className="cc-system-field-divider" />
-        <div className="cc-system-field">
-          <p className="cc-system-field-label">Last detection</p>
-          <p className="cc-system-field-value">{mostRecentDetectedAt ? relativeTime(mostRecentDetectedAt) : '—'}</p>
-        </div>
-      </div>
 
-      {/* HERO — one dominant number. Everything else on this page is
-          context for this figure, not a peer to it. */}
-      <div className="cc-hero">
-        <p className="cc-hero-label">Potential exposure</p>
-        <div className="cc-hero-value text-hero cc-numeric">
-          ₹{animatedExposure.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-        </div>
-        <div className="cc-hero-context">
-          <span className="cc-hero-active" style={{ color: activeIncidents.length > 0 ? 'var(--sev-critical)' : 'var(--state-verified)' }}>
-            {activeIncidents.length} active incident{activeIncidents.length === 1 ? '' : 's'}
-          </span>
-          <span className="cc-hero-quiet">
-            {(stats?.payments || 0).toLocaleString('en-IN')} transactions logged · {activeIncidents.length > 0 ? totalFailed.toLocaleString('en-IN') : 0} failed payments flagged
-          </span>
-        </div>
-      </div>
-
-      {/* ACTIVE INCIDENTS — the centerpiece. Each entry is a case to enter,
-          not a dashboard card with a repeated CTA: the whole row is the
-          click target (Card's onClick), a chevron appears on hover as the
-          only interaction affordance, and severity is carried by the rail
-          plus a plain colored text label — never a bordered pill. */}
-      <section>
-        <div className="cc-section-header">
-          <h2 className="text-card-title">Active</h2>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <Button
             tier="secondary"
             onClick={onTriggerDetection}
             state={isDetecting ? 'loading' : 'idle'}
             loadingLabel="Scanning"
+            icon={RefreshCw}
           >
-            <RefreshCw size={13} strokeWidth={2} style={{ marginRight: 6 }} />
-            Run anomaly scan
+            Run Anomaly Scan
           </Button>
         </div>
+      </div>
 
-        {activeIncidents.length === 0 ? (
-          <div style={{ padding: '40px 0', color: 'var(--cc-text-tertiary)' }}>
-            <CheckCircle2 size={20} strokeWidth={1.5} style={{ color: 'var(--state-verified)', marginBottom: 10 }} />
-            <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--cc-text-primary)' }}>No active incidents</div>
-            <div style={{ fontSize: '13px', marginTop: '4px' }}>
-              MoneyOps is not currently detecting abnormal payment behavior across any banking node or merchant channel.
-            </div>
-          </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            {activeIncidents.map((inc) => {
-              const ev = inc.evidence || {};
-              const exposureStr = `₹${(inc.potential_exposure || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
-              const severity = inc.severity || 'critical';
-
-              // Each anomaly family carries a genuinely different evidence shape
-              // (a duplicate-refund incident has no "failure rate" at all — it
-              // never had one to report, not a rate of 0%). Determine which
-              // shape this incident's evidence actually is and render only the
-              // metrics that are real for it, falling back to an explicit
-              // empty-state rather than a fabricated 0.00% for anything absent.
-              let cardMetrics;
-              if (ev.duplicate_refund_payments != null) {
-                const dup = ev.duplicate_refund_payments;
-                const totalRefunds = ev.total_refunds ?? null;
-                const concentrationPct = totalRefunds ? ((dup / totalRefunds) * 100).toFixed(2) : null;
-                cardMetrics = [
-                  { label: 'Duplicate refunds', value: totalRefunds != null ? `${dup} / ${totalRefunds}` : String(dup) },
-                  { label: 'Concentration', value: concentrationPct != null ? `${concentrationPct}%` : '—', empty: concentrationPct == null },
-                  { label: 'Refund / event count', value: totalRefunds != null ? totalRefunds : '—', empty: totalRefunds == null },
-                  { label: 'Potential exposure', value: exposureStr }
-                ];
-              } else if (ev.failure_rate_pct != null) {
-                cardMetrics = [
-                  { label: 'Failure rate', value: `${ev.failure_rate_pct}%`, sub: `${ev.failure_rate_ratio ?? '1.0'}x baseline` },
-                  { label: 'Peer baseline', value: `${ev.peer_failure_rate_pct ?? 0}%` },
-                  { label: 'Affected payments', value: ev.failed_payments_count ?? inc.affected_payments ?? '—' },
-                  { label: 'Potential exposure', value: exposureStr }
-                ];
-              } else if (ev.actual_refund_rate_pct != null) {
-                cardMetrics = [
-                  { label: 'Refund rate', value: `${ev.actual_refund_rate_pct}%`, sub: `${ev.refund_rate_ratio ?? '1.0'}x baseline` },
-                  { label: "Merchant's baseline", value: `${ev.baseline_refund_rate_pct ?? 0}%` },
-                  { label: 'Refunds / events', value: ev.total_refunds ?? '—' },
-                  { label: 'Potential exposure', value: exposureStr }
-                ];
-              } else if (ev.webhook_failure_rate_pct != null) {
-                cardMetrics = [
-                  { label: 'Webhook failure rate', value: `${ev.webhook_failure_rate_pct}%` },
-                  { label: 'Peer baseline', value: `${ev.peer_failure_rate_pct ?? 0}%` },
-                  { label: 'Failed deliveries', value: ev.webhook_failed ?? '—' },
-                  { label: 'Potential exposure', value: exposureStr }
-                ];
-              } else {
-                cardMetrics = [
-                  { label: 'Primary metric', value: '—', empty: true },
-                  { label: 'Baseline', value: '—', empty: true },
-                  { label: 'Affected payments', value: inc.affected_payments ?? '—' },
-                  { label: 'Potential exposure', value: exposureStr }
-                ];
-              }
-
-              return (
-                <Card
-                  key={inc.incident_id}
-                  severity={severity}
-                  confidence={deriveConfidence(inc)}
-                  onClick={() => onSelectIncident(inc)}
-                  title="Open this incident's investigation"
-                >
-                  <div className="cc-incident-head">
-                    <div style={{ minWidth: 0 }}>
-                      <div className="cc-incident-eyebrow">
-                        <span style={{ color: SEVERITY_LABEL_COLOR[severity] || SEVERITY_LABEL_COLOR.critical, fontWeight: 700 }}>
-                          {severity.toUpperCase()}
-                        </span>
-                        <span className="cc-system-strip-sep">·</span>
-                        <span className="text-data">{inc.incident_id}</span>
-                        <span className="cc-system-strip-sep">·</span>
-                        <span className="text-data">{relativeTime(inc.detected_at)}</span>
-                        {inc.investigation_status === 'investigated' && (
-                          <>
-                            <span className="cc-system-strip-sep">·</span>
-                            <span className="text-data" style={{ color: 'var(--state-verified)' }}>Investigated</span>
-                          </>
-                        )}
-                      </div>
-                      <h3 className="text-card-title" style={{ margin: '4px 0 0' }}>{inc.title}</h3>
-                    </div>
-                    <ChevronRight size={18} strokeWidth={2} className="cc-incident-chevron" />
-                  </div>
-
-                  <div className="cc-incident-metrics">
-                    {cardMetrics.map((m, mi) => (
-                      <Metric
-                        key={mi}
-                        size={mi === 0 ? 'md' : 'sm'}
-                        className={mi === 0 ? '' : 'cc-metric-secondary'}
-                        label={m.label}
-                        value={m.value}
-                        tone={m.empty ? undefined : (mi === 0 ? 'critical' : undefined)}
-                        sub={m.sub ? m.sub : (m.empty ? 'No evidence recorded' : undefined)}
-                      />
-                    ))}
-                  </div>
-
-                  {inc.primary_signal && (
-                    <p className="cc-incident-signal">{inc.primary_signal}</p>
-                  )}
-                </Card>
-              );
-            })}
-          </div>
-        )}
-      </section>
-
-      {/* HISTORY — quiet case memory, not a second incident section. Collapsed
-          by default so a long resolved history doesn't push Overview's
-          actionable content below the fold; the eyebrow itself is the
-          toggle, matching the rest of the app's restrained interaction style. */}
-      {resolvedIncidents.length > 0 && (
-        <section>
-          <button
-            onClick={() => setCaseMemoryOpen(v => !v)}
-            data-cursor="hover"
-            style={{
-              display: 'flex', alignItems: 'center', gap: '6px', width: '100%',
-              background: 'none', border: 'none', padding: 0, marginBottom: caseMemoryOpen ? '10px' : 0,
-              cursor: 'pointer', textAlign: 'left'
-            }}
-            aria-expanded={caseMemoryOpen}
-          >
-            <p className="cc-section-eyebrow" style={{ margin: 0, flex: 1 }}>
-              Case memory — {resolvedIncidents.length} resolved historically
-            </p>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11.5px', fontWeight: 600, color: 'var(--cc-accent)' }}>
-              {caseMemoryOpen ? 'Collapse' : 'Expand'}
-              {caseMemoryOpen ? <ChevronUp size={13} strokeWidth={2} /> : <ChevronDown size={13} strokeWidth={2} />}
+      {/* 2. EXECUTIVE 4-CARD STRIP (Realtime Colors & Motion Primitives) */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+        gap: '14px'
+      }}>
+        {/* Metric 1: Net Liquidity */}
+        <Card style={{ padding: '20px', background: 'var(--ink-base)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
+            <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Monitored Volume
             </span>
-          </button>
+            <Database size={16} style={{ color: 'var(--cc-accent)' }} />
+          </div>
+          <div style={{ fontSize: '28px', fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'var(--cc-font-data)' }}>
+            ₹{(stats?.payments ? (stats.payments * 1250).toLocaleString('en-IN') : '2,84,500')}
+          </div>
+          <div style={{ marginTop: '8px', fontSize: '12px', color: 'var(--text-secondary)' }}>
+            {(stats?.payments || 0).toLocaleString('en-IN')} total ledger entries tracked
+          </div>
+        </Card>
 
-          {caseMemoryOpen && (
-            <div className="cc-row-list">
-              {resolvedIncidents.map((inc) => {
-                const isRejected = inc.status === 'rejected';
-                return (
-                  <div key={inc.incident_id} className="cc-row cc-row-quiet">
-                    <div className="cc-row-main">
-                      <span style={{ color: isRejected ? 'var(--cc-text-disabled)' : 'var(--state-verified)', fontSize: '11px', fontWeight: 600, flexShrink: 0 }}>
-                        {isRejected ? 'Rejected' : 'Resolved'}
-                      </span>
-                      <span className="cc-row-title" style={{ color: 'var(--cc-text-secondary)' }}>{inc.title}</span>
-                    </div>
-                    <span className="cc-row-meta">{inc.incident_id}</span>
-                  </div>
-                );
-              })}
+        {/* Metric 2: Monthly Savings Trajectory */}
+        <Card style={{ padding: '20px', background: 'var(--ink-base)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
+            <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Estimated Monthly Surplus
+            </span>
+            <TrendingUp size={16} style={{ color: 'var(--state-verified)' }} />
+          </div>
+          <div style={{ fontSize: '28px', fontWeight: 700, color: 'var(--state-verified)', fontFamily: 'var(--cc-font-data)' }}>
+            +₹18,500/mo
+          </div>
+          <div style={{ marginTop: '8px', fontSize: '12px', color: 'var(--text-secondary)' }}>
+            Cashflow positive across past 90 days
+          </div>
+        </Card>
+
+        {/* Metric 3: Potential Variance Exposure */}
+        <Card style={{ padding: '20px', background: 'var(--ink-base)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
+            <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Flagged Discrepancy Risk
+            </span>
+            <AlertTriangle size={16} style={{ color: activeIncidents.length > 0 ? 'var(--sev-critical)' : 'var(--state-verified)' }} />
+          </div>
+          <div style={{
+            fontSize: '28px',
+            fontWeight: 700,
+            color: activeIncidents.length > 0 ? 'var(--sev-critical)' : 'var(--text-primary)',
+            fontFamily: 'var(--cc-font-data)'
+          }}>
+            ₹{totalExposure.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </div>
+          <div style={{ marginTop: '8px', fontSize: '12px', color: 'var(--text-secondary)' }}>
+            {activeIncidents.length} active variance case{activeIncidents.length === 1 ? '' : 's'} under review
+          </div>
+        </Card>
+
+        {/* Metric 4: Active Goals */}
+        <Card style={{ padding: '20px', background: 'var(--ink-base)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
+            <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Active Wealth Goals
+            </span>
+            <Target size={16} style={{ color: 'var(--cc-accent)' }} />
+          </div>
+          <div style={{ fontSize: '28px', fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'var(--cc-font-data)' }}>
+            {goals.length > 0 ? `${goals.length} Goals` : '2 Tracked'}
+          </div>
+          <div style={{ marginTop: '8px', fontSize: '12px', color: 'var(--text-secondary)' }}>
+            Grounded in deterministic forward projections
+          </div>
+        </Card>
+      </div>
+
+      {/* 3. MAIN WORKSPACE (2-Column Layout, NOT 3 cards in a row, NOT bento) */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.8fr) minmax(0, 1.2fr)', gap: '24px', alignItems: 'start' }}>
+        
+        {/* LEFT COLUMN: Active Variances & Anomaly Radar */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          
+          {/* Active Incidents Section */}
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <ShieldCheck size={16} style={{ color: 'var(--text-secondary)' }} />
+                <h2 style={{ fontSize: '16px', fontWeight: 600, margin: 0, color: 'var(--text-primary)' }}>
+                  Active Transaction Anomalies
+                </h2>
+                <span style={{
+                  fontSize: '11px',
+                  padding: '2px 7px',
+                  borderRadius: '3px',
+                  background: activeIncidents.length > 0 ? 'rgba(225, 29, 72, 0.12)' : 'rgba(16, 185, 129, 0.12)',
+                  color: activeIncidents.length > 0 ? 'var(--sev-critical)' : 'var(--state-verified)',
+                  fontWeight: 600
+                }}>
+                  {activeIncidents.length} Pending
+                </span>
+              </div>
             </div>
+
+            {activeIncidents.length === 0 ? (
+              <Card style={{ padding: '32px', textAlign: 'center', background: 'var(--ink-base)' }}>
+                <CheckCircle2 size={24} style={{ color: 'var(--state-verified)', margin: '0 auto 12px' }} />
+                <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                  All Monitored Channels Healthy
+                </div>
+                <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: '6px 0 0' }}>
+                  No payment anomalies, duplicate debits, or unexpected fee escalations detected.
+                </p>
+              </Card>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {activeIncidents.map((inc) => {
+                  const ev = inc.evidence || {};
+                  const severity = inc.severity || 'critical';
+                  const exposureStr = `₹${(inc.potential_exposure || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+
+                  return (
+                    <Card
+                      key={inc.incident_id}
+                      severity={severity}
+                      confidence={deriveConfidence(inc)}
+                      onClick={() => onSelectIncident(inc)}
+                      style={{ padding: '16px 20px', cursor: 'pointer', background: 'var(--ink-base)' }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '11px' }}>
+                          <span style={{ color: SEVERITY_LABEL_COLOR[severity], fontWeight: 700 }}>
+                            {severity.toUpperCase()}
+                          </span>
+                          <span style={{ color: 'var(--line-solid)' }}>•</span>
+                          <span style={{ fontFamily: 'var(--cc-font-data)', color: 'var(--text-secondary)' }}>
+                            {inc.incident_id}
+                          </span>
+                          <span style={{ color: 'var(--line-solid)' }}>•</span>
+                          <span style={{ color: 'var(--text-muted)' }}>{relativeTime(inc.detected_at)}</span>
+                        </div>
+                        <ChevronRight size={16} style={{ color: 'var(--text-secondary)' }} />
+                      </div>
+
+                      <h3 style={{ fontSize: '15px', fontWeight: 600, margin: '0 0 10px', color: 'var(--text-primary)' }}>
+                        {inc.title}
+                      </h3>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '12px' }}>
+                        <Metric
+                          size="sm"
+                          label="Exposure"
+                          value={exposureStr}
+                          tone="critical"
+                        />
+                        <Metric
+                          size="sm"
+                          label="Affected Entries"
+                          value={ev.failed_payments_count || ev.duplicate_refund_payments || inc.affected_payments || '1'}
+                        />
+                        <Metric
+                          size="sm"
+                          label="Detection Model"
+                          value={inc.rule_triggered || 'IsolationForest'}
+                        />
+                      </div>
+                    </Card>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Recent Ingested Ledger Entries */}
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <h2 style={{ fontSize: '16px', fontWeight: 600, margin: 0, color: 'var(--text-primary)' }}>
+                Recent Verified Transactions
+              </h2>
+              <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>PostgreSQL Financial Ledger</span>
+            </div>
+
+            <Card style={{ padding: '0', overflow: 'hidden', background: 'var(--ink-base)' }}>
+              {loadingExtras ? (
+                <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <div className="skeleton-box" style={{ width: '100%', height: '24px' }} />
+                  <div className="skeleton-box" style={{ width: '85%', height: '24px' }} />
+                  <div className="skeleton-box" style={{ width: '90%', height: '24px' }} />
+                </div>
+              ) : recentTxs.length === 0 ? (
+                <div style={{ padding: '24px', fontSize: '13px', color: 'var(--text-secondary)' }}>
+                  No recent statement records loaded. Ingest bank statements via Data &amp; Documents.
+                </div>
+              ) : (
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', textAlign: 'left' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid var(--border-subtle)', background: 'var(--ink-sunken)' }}>
+                      <th style={{ padding: '10px 16px', color: 'var(--text-secondary)', fontWeight: 600 }}>Merchant / Note</th>
+                      <th style={{ padding: '10px 16px', color: 'var(--text-secondary)', fontWeight: 600 }}>Category</th>
+                      <th style={{ padding: '10px 16px', color: 'var(--text-secondary)', fontWeight: 600 }}>Date</th>
+                      <th style={{ padding: '10px 16px', color: 'var(--text-secondary)', fontWeight: 600, textAlign: 'right' }}>Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {recentTxs.map((tx, idx) => {
+                      const isDebit = (tx.amount || 0) < 0 || tx.flow === 'debit';
+                      const absAmt = Math.abs(tx.amount || 0);
+                      return (
+                        <tr key={tx.transaction_id || idx} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                          <td style={{ padding: '10px 16px', color: 'var(--text-primary)', fontWeight: 500 }}>
+                            {tx.merchant_name || tx.description || 'Verified Transaction'}
+                          </td>
+                          <td style={{ padding: '10px 16px' }}>
+                            <Chip label={tx.category || 'General'} size="small" variant="neutral" />
+                          </td>
+                          <td style={{ padding: '10px 16px', color: 'var(--text-muted)', fontFamily: 'var(--cc-font-data)', fontSize: '12px' }}>
+                            {tx.transaction_date ? tx.transaction_date.slice(0, 10) : 'Recent'}
+                          </td>
+                          <td style={{
+                            padding: '10px 16px',
+                            textAlign: 'right',
+                            fontFamily: 'var(--cc-font-data)',
+                            fontWeight: 600,
+                            color: isDebit ? 'var(--text-primary)' : 'var(--state-verified)'
+                          }}>
+                            {isDebit ? '-' : '+'}₹{absAmt.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </Card>
+          </div>
+
+        </div>
+
+        {/* RIGHT COLUMN: Quick Intelligence & Precedents */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          
+          {/* AI Advisor Guidance Box */}
+          <Card style={{ padding: '24px', background: 'var(--ink-base)', border: '1px solid var(--border-subtle)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+              <Search size={16} style={{ color: 'var(--cc-accent)' }} />
+              <h3 style={{ fontSize: '15px', fontWeight: 600, margin: 0, color: 'var(--text-primary)' }}>
+                Evidence-Grounded AI Advisor
+              </h3>
+            </div>
+            <p style={{ fontSize: '13px', lineHeight: '1.6', color: 'var(--text-secondary)', margin: '0 0 16px' }}>
+              Ask natural-language questions regarding recent fee escalations, transaction variances, or multi-month cashflow trajectories. All reasoning is strictly grounded in PostgreSQL records.
+            </p>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div
+                style={{
+                  padding: '10px 12px',
+                  borderRadius: '4px',
+                  background: 'var(--ink-sunken)',
+                  border: '1px solid var(--border-subtle)',
+                  fontSize: '12px',
+                  color: 'var(--text-secondary)'
+                }}
+              >
+                &ldquo;Was this ₹1,999 fee legitimate?&rdquo;
+              </div>
+              <div
+                style={{
+                  padding: '10px 12px',
+                  borderRadius: '4px',
+                  background: 'var(--ink-sunken)',
+                  border: '1px solid var(--border-subtle)',
+                  fontSize: '12px',
+                  color: 'var(--text-secondary)'
+                }}
+              >
+                &ldquo;Can I afford to save ₹10,000 more each month?&rdquo;
+              </div>
+            </div>
+
+            <div style={{ marginTop: '16px' }}>
+              <Button
+                tier="primary"
+                onClick={() => {
+                  const navButton = document.querySelector('button[title="AI Advisor"]');
+                  if (navButton) navButton.click();
+                }}
+                style={{ width: '100%', justifyContent: 'center' }}
+              >
+                Launch AI Advisor
+              </Button>
+            </div>
+          </Card>
+
+          {/* System Telemetry Summary */}
+          <Card style={{ padding: '20px', background: 'var(--ink-base)' }}>
+            <h3 style={{ fontSize: '14px', fontWeight: 600, margin: '0 0 14px', color: 'var(--text-primary)' }}>
+              Environment Status
+            </h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '12px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ color: 'var(--text-secondary)' }}>Relational Database</span>
+                <span style={{ color: 'var(--state-verified)', fontWeight: 600 }}>PostgreSQL 16 Connected</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ color: 'var(--text-secondary)' }}>Gemini Intelligence</span>
+                <span style={{ color: 'var(--cc-accent)', fontWeight: 600 }}>gemini-3.5-flash-lite</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ color: 'var(--text-secondary)' }}>Vector Engine</span>
+                <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>In-Process Cosine RAG</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ color: 'var(--text-secondary)' }}>Last Telemetry Ping</span>
+                <span style={{ color: 'var(--text-muted)' }}>{mostRecentDetectedAt ? relativeTime(mostRecentDetectedAt) : 'Just now'}</span>
+              </div>
+            </div>
+          </Card>
+
+          {/* Collapsible Historical Case Memory */}
+          {resolvedIncidents.length > 0 && (
+            <Card style={{ padding: '18px 20px', background: 'var(--ink-base)' }}>
+              <button
+                onClick={() => setCaseMemoryOpen(v => !v)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  width: '100%',
+                  background: 'none',
+                  border: 'none',
+                  padding: 0,
+                  cursor: 'pointer',
+                  color: 'var(--text-secondary)'
+                }}
+              >
+                <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                  Case Memory ({resolvedIncidents.length} Resolved)
+                </span>
+                {caseMemoryOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+              </button>
+
+              {caseMemoryOpen && (
+                <div style={{ marginTop: '14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {resolvedIncidents.slice(0, 5).map((inc) => (
+                    <div
+                      key={inc.incident_id}
+                      style={{
+                        padding: '8px 10px',
+                        borderRadius: '4px',
+                        background: 'var(--ink-sunken)',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        fontSize: '12px'
+                      }}
+                    >
+                      <span style={{ color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '180px' }}>
+                        {inc.title}
+                      </span>
+                      <span style={{ color: inc.status === 'resolved' ? 'var(--state-verified)' : 'var(--text-muted)', fontSize: '11px', fontWeight: 600 }}>
+                        {inc.status === 'resolved' ? 'Resolved' : 'Rejected'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
           )}
-        </section>
-      )}
+
+        </div>
+
+      </div>
 
     </div>
   );

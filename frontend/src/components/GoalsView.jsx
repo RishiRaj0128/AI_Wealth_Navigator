@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Target, TrendingUp, Sparkles, Plus, AlertCircle, CheckCircle2,
+  Target, TrendingUp, Plus, AlertCircle,
   Calendar, ArrowRight, ShieldCheck, RefreshCw, Sliders, ChevronRight, Edit3
-} from 'lucide-react';
+} from '../icons';
 import { Card, Metric, Button, Chip } from '../primitives';
 import {
   fetchFinancialGoals,
@@ -168,7 +168,7 @@ export default function GoalsView() {
             <span style={{
               fontSize: '11px',
               padding: '2px 8px',
-              borderRadius: '12px',
+              borderRadius: '4px',
               background: 'rgba(16, 185, 129, 0.15)',
               color: '#10b981',
               fontWeight: 700
@@ -217,66 +217,85 @@ export default function GoalsView() {
         </div>
       )}
 
-      {/* 2. Top Summary KPI Cards */}
+      {/* 2. Top Summary KPI Cards (4-metric strip, flat solid surfaces) */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
-        gap: '16px'
+        gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+        gap: '14px'
       }}>
-        <Card variant="glass">
+        <Card style={{ padding: '18px 20px', background: 'var(--ink-base)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <div>
-              <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              <p style={{ fontSize: '11px', color: 'var(--text-secondary)', margin: 0, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                 Active Goals
               </p>
-              <h3 style={{ fontSize: '28px', fontWeight: 800, margin: '8px 0 0', color: 'var(--text)' }}>
+              <h3 style={{ fontSize: '26px', fontWeight: 700, margin: '6px 0 0', color: 'var(--text)', fontFamily: 'var(--cc-font-data)' }}>
                 {goals.length}
               </h3>
             </div>
-            <div style={{ padding: '10px', borderRadius: '8px', background: 'rgba(99, 102, 241, 0.12)', color: 'var(--primary)' }}>
-              <Target size={20} />
+            <div style={{ padding: '8px', borderRadius: '4px', background: 'rgba(2, 132, 199, 0.12)', color: 'var(--cc-accent)' }}>
+              <Target size={18} />
             </div>
           </div>
-          <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '12px 0 0' }}>
-            {goals.filter(g => g.status === 'active').length} in progress · {goals.filter(g => g.status === 'completed').length} completed
+          <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: '10px 0 0' }}>
+            {goals.filter(g => g.status === 'active').length} active in progress
           </p>
         </Card>
 
-        <Card variant="glass">
+        <Card style={{ padding: '18px 20px', background: 'var(--ink-base)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <div>
-              <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                Total Target Volume
+              <p style={{ fontSize: '11px', color: 'var(--text-secondary)', margin: 0, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                Target Wealth Volume
               </p>
-              <h3 style={{ fontSize: '28px', fontWeight: 800, margin: '8px 0 0', color: 'var(--text)' }}>
+              <h3 style={{ fontSize: '26px', fontWeight: 700, margin: '6px 0 0', color: 'var(--text)', fontFamily: 'var(--cc-font-data)' }}>
                 ₹{goals.reduce((sum, g) => sum + (g.target_amount || 0), 0).toLocaleString('en-IN')}
               </h3>
             </div>
-            <div style={{ padding: '10px', borderRadius: '8px', background: 'rgba(16, 185, 129, 0.12)', color: '#10b981' }}>
-              <TrendingUp size={20} />
+            <div style={{ padding: '8px', borderRadius: '4px', background: 'rgba(16, 185, 129, 0.12)', color: 'var(--state-verified)' }}>
+              <TrendingUp size={18} />
             </div>
           </div>
-          <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '12px 0 0' }}>
-            ₹{goals.reduce((sum, g) => sum + (g.current_amount || 0), 0).toLocaleString('en-IN')} saved so far
+          <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: '10px 0 0' }}>
+            Total capital target across goals
           </p>
         </Card>
 
-        <Card variant="glass">
+        <Card style={{ padding: '18px 20px', background: 'var(--ink-base)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <div>
-              <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              <p style={{ fontSize: '11px', color: 'var(--text-secondary)', margin: 0, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                Accumulated Capital
+              </p>
+              <h3 style={{ fontSize: '26px', fontWeight: 700, margin: '6px 0 0', color: 'var(--state-verified)', fontFamily: 'var(--cc-font-data)' }}>
+                ₹{goals.reduce((sum, g) => sum + (g.current_amount || 0), 0).toLocaleString('en-IN')}
+              </h3>
+            </div>
+            <div style={{ padding: '8px', borderRadius: '4px', background: 'rgba(16, 185, 129, 0.12)', color: 'var(--state-verified)' }}>
+              <ShieldCheck size={18} />
+            </div>
+          </div>
+          <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: '10px 0 0' }}>
+            Verified saved balance in PostgreSQL
+          </p>
+        </Card>
+
+        <Card style={{ padding: '18px 20px', background: 'var(--ink-base)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div>
+              <p style={{ fontSize: '11px', color: 'var(--text-secondary)', margin: 0, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                 Active Scenario Focus
               </p>
-              <h3 style={{ fontSize: '20px', fontWeight: 800, margin: '8px 0 0', color: selectedGoal ? 'var(--text)' : 'var(--text-muted)' }}>
+              <h3 style={{ fontSize: '18px', fontWeight: 700, margin: '6px 0 0', color: selectedGoal ? 'var(--text)' : 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '160px' }}>
                 {selectedGoal ? selectedGoal.goal_name : 'No Goal Selected'}
               </h3>
             </div>
-            <div style={{ padding: '10px', borderRadius: '8px', background: 'rgba(245, 158, 11, 0.12)', color: '#f59e0b' }}>
-              <Sliders size={20} />
+            <div style={{ padding: '8px', borderRadius: '4px', background: 'rgba(234, 179, 8, 0.12)', color: 'var(--sev-medium)' }}>
+              <Sliders size={18} />
             </div>
           </div>
-          <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '12px 0 0' }}>
-            {selectedGoal?.target_date ? `Target date: ${selectedGoal.target_date}` : 'Ongoing goal'}
+          <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: '10px 0 0' }}>
+            {selectedGoal?.target_date ? `Target: ${selectedGoal.target_date}` : 'Ongoing scenario model'}
           </p>
         </Card>
       </div>
@@ -327,12 +346,11 @@ export default function GoalsView() {
                   onClick={() => setSelectedGoalId(goal.goal_id)}
                   style={{
                     padding: '16px 20px',
-                    borderRadius: '10px',
-                    background: isSelected ? 'rgba(99, 102, 241, 0.08)' : 'rgba(255, 255, 255, 0.02)',
+                    borderRadius: '8px',
+                    background: isSelected ? 'rgba(76, 111, 255, 0.08)' : 'rgba(255, 255, 255, 0.02)',
                     border: isSelected ? '1px solid var(--primary)' : '1px solid var(--border)',
                     cursor: 'pointer',
-                    transition: 'all 180ms ease-in-out',
-                    boxShadow: isSelected ? '0 0 16px rgba(99, 102, 241, 0.15)' : 'none'
+                    transition: 'all 180ms ease-in-out'
                   }}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
@@ -356,8 +374,8 @@ export default function GoalsView() {
                       fontSize: '11px',
                       fontWeight: 700,
                       padding: '2px 8px',
-                      borderRadius: '10px',
-                      background: pct >= 100 ? 'rgba(16, 185, 129, 0.2)' : 'rgba(99, 102, 241, 0.15)',
+                      borderRadius: '4px',
+                      background: pct >= 100 ? 'rgba(16, 185, 129, 0.2)' : 'rgba(76, 111, 255, 0.15)',
                       color: pct >= 100 ? '#10b981' : 'var(--primary)'
                     }}>
                       {pct}% Complete
@@ -380,7 +398,7 @@ export default function GoalsView() {
                       style={{
                         height: '100%',
                         borderRadius: '4px',
-                        background: pct >= 100 ? 'linear-gradient(90deg, #10b981, #059669)' : 'linear-gradient(90deg, #6366f1, #3b82f6)'
+                        background: pct >= 100 ? 'var(--state-verified)' : 'var(--cc-accent)'
                       }}
                     />
                   </div>
@@ -492,7 +510,7 @@ export default function GoalsView() {
                 alignItems: 'center',
                 gap: '6px'
               }}>
-                <Sparkles size={13} /> Real PostgreSQL Cashflow
+                <TrendingUp size={13} /> Real PostgreSQL Cashflow
               </span>
             </div>
 
@@ -640,7 +658,7 @@ export default function GoalsView() {
               <Button
                 variant="secondary"
                 onClick={handleLoadRecommendations}
-                icon={Sparkles}
+                icon={TrendingUp}
                 disabled={loadingRecs || !selectedGoalId}
               >
                 {loadingRecs ? 'Analyzing…' : 'Find Opportunities'}
@@ -729,8 +747,7 @@ export default function GoalsView() {
           <div style={{
             position: 'fixed',
             inset: 0,
-            background: 'rgba(0,0,0,0.7)',
-            backdropFilter: 'blur(6px)',
+            background: 'rgba(0,0,0,0.8)',
             zIndex: 1000,
             display: 'flex',
             alignItems: 'center',
@@ -744,11 +761,11 @@ export default function GoalsView() {
               style={{
                 width: '100%',
                 maxWidth: '480px',
-                background: 'rgba(15, 23, 42, 0.95)',
+                background: 'var(--ink-base)',
                 border: '1px solid var(--border)',
-                borderRadius: '12px',
+                borderRadius: '8px',
                 padding: '28px',
-                boxShadow: '0 20px 40px rgba(0,0,0,0.6)'
+                boxShadow: '0 1px 2px rgba(0,0,0,0.06)'
               }}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>

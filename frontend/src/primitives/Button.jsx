@@ -28,6 +28,7 @@ export default function Button({
   tier = 'primary', // 'primary' | 'secondary' | 'ghost'
   tone = 'neutral', // 'neutral' | 'critical' | 'warning' | 'verified'
   state = 'idle', // 'idle' | 'loading' | 'success' (consumer-driven entry)
+  icon: Icon,
   children,
   loadingLabel,
   successLabel,
@@ -80,6 +81,9 @@ export default function Button({
         <svg className="cc-btn-check" width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden="true">
           <path d="M2.5 7.2L5.6 10.3L11.5 3.8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
+      )}
+      {Icon && !isLoading && !isSuccess && (
+        <Icon size={14} style={{ marginRight: '6px', display: 'inline-block', verticalAlign: 'middle' }} />
       )}
       <span className="cc-btn-label">{label}</span>
     </button>

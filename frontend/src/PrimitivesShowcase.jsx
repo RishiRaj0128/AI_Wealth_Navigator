@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import CustomCursor from './components/CustomCursor';
 import {
   Button, Card, SeverityRail, Chip, Metric, SegmentedControl, Skeleton, ToastProvider, useToast, Drawer,
 } from './primitives';
@@ -27,7 +26,7 @@ function ButtonSection() {
 
   return (
     <section className="showcase-section">
-      <h2>Button — 3 tiers x 3 async states (Phase 3.1)</h2>
+      <h2>Button: 3 tiers x 3 async states (Phase 3.1)</h2>
       <div className="showcase-row">
         <Button tier="primary">Primary action</Button>
         <Button tier="secondary">Secondary action</Button>
@@ -45,7 +44,7 @@ function ButtonSection() {
           Approve
         </Button>
         <span className="showcase-note" style={{ margin: 0 }}>
-          triggered {triggerCount}x — click again after it settles back to "Approve"
+          triggered {triggerCount}x (click again after it settles back to "Approve")
         </span>
       </div>
       <div className="showcase-row">
@@ -58,7 +57,7 @@ function ButtonSection() {
       </p>
 
       <h3 style={{ fontSize: 12, fontWeight: 600, color: 'var(--cc-text-tertiary)', margin: '24px 0 10px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-        Semantic destructive/irreversible tone — never a filled rectangle
+        Semantic destructive/irreversible tone: never a filled rectangle
       </h3>
       <div className="showcase-row">
         <Button tier="ghost" tone="critical">Reject</Button>
@@ -75,11 +74,11 @@ function CardSection() {
   const [approved, setApproved] = useState(false);
   return (
     <section className="showcase-section">
-      <h2>Card + SeverityRail — the signature primitive</h2>
+      <h2>Card + SeverityRail: the signature primitive</h2>
       <div className="showcase-grid">
         <Card severity="critical" confidence={88}>
           <div className="showcase-card-title">Gateway_ICICI Timeout Concentration</div>
-          <div className="showcase-card-sub">critical · 88% confidence — hover the rail edge</div>
+          <div className="showcase-card-sub">critical · 88% confidence (hover the rail edge)</div>
         </Card>
         <Card severity="medium" confidence={42}>
           <div className="showcase-card-title">Duplicate Refund Activity</div>
@@ -87,7 +86,7 @@ function CardSection() {
         </Card>
         <Card severity="critical" confidence={95} approved={approved} onClick={() => setApproved(a => !a)}>
           <div className="showcase-card-title">Click to toggle approval</div>
-          <div className="showcase-card-sub">{approved ? 'approved — rail drained to verified' : 'not yet approved'}</div>
+          <div className="showcase-card-sub">{approved ? 'approved (rail drained to verified)' : 'not yet approved'}</div>
         </Card>
       </div>
       <p className="showcase-note">Standalone rail at varying confidence:</p>
@@ -104,13 +103,13 @@ function CardSection() {
 function ChipSection() {
   return (
     <section className="showcase-section">
-      <h2>Chip — compact, restrained</h2>
+      <h2>Chip: compact, restrained</h2>
       <div className="showcase-row">
         <Chip>NEUTRAL</Chip>
         <Chip tone="accent">ACCENT</Chip>
         <Chip tone="critical">CRITICAL</Chip>
         <Chip tone="verified">VERIFIED</Chip>
-        <Chip tone="critical" interactive onClick={() => {}}>INTERACTIVE — TAB TO ME</Chip>
+        <Chip tone="critical" interactive onClick={() => {}}>INTERACTIVE: TAB TO ME</Chip>
       </div>
     </section>
   );
@@ -119,7 +118,7 @@ function ChipSection() {
 function MetricSection() {
   return (
     <section className="showcase-section">
-      <h2>Metric — forensic numbers</h2>
+      <h2>Metric: forensic numbers</h2>
       <div className="showcase-row">
         <Metric label="Potential Exposure" value="₹2,69,810.22" delta="12.4%" deltaDirection="down" sub="vs. last 7 days" />
         <Metric label="Active Incidents" value="3" delta="1" deltaDirection="up" sub="vs. yesterday" />
@@ -133,7 +132,7 @@ function SegmentedSection() {
   const [value, setValue] = useState('payments');
   return (
     <section className="showcase-section">
-      <h2>SegmentedControl — keyboard accessible</h2>
+      <h2>SegmentedControl: keyboard accessible</h2>
       <SegmentedControl
         label="Data source"
         value={value}
@@ -153,7 +152,7 @@ function SegmentedSection() {
 function SkeletonSection() {
   return (
     <section className="showcase-section">
-      <h2>Skeleton — matches real geometry</h2>
+      <h2>Skeleton: matches real geometry</h2>
       <div className="showcase-row" style={{ alignItems: 'flex-start' }}>
         <div style={{ width: 260 }}>
           <Skeleton variant="text" lines={3} />
@@ -169,7 +168,7 @@ function ToastSection() {
   const { push } = useToast();
   return (
     <section className="showcase-section">
-      <h2>Toast — minimal, non-intrusive</h2>
+      <h2>Toast: minimal, non-intrusive</h2>
       <div className="showcase-row">
         <Button tier="secondary" onClick={() => push('Detection scan complete.', 'success')}>Trigger success</Button>
         <Button tier="secondary" onClick={() => push('Investigation failed to reach Gemini.', 'error')}>Trigger error</Button>
@@ -183,7 +182,7 @@ function DrawerSection() {
   const [open, setOpen] = useState(false);
   return (
     <section className="showcase-section">
-      <h2>Drawer — focus trap, Escape, backdrop</h2>
+      <h2>Drawer: focus trap, Escape, backdrop</h2>
       <Button tier="secondary" onClick={() => setOpen(true)}>Open drawer</Button>
       <Drawer open={open} onClose={() => setOpen(false)} title="Incident Detail">
         <p style={{ color: 'var(--cc-text-secondary)', marginBottom: 16 }}>
@@ -197,20 +196,14 @@ function DrawerSection() {
 }
 
 export default function PrimitivesShowcase() {
-  const [cursorEnabled, setCursorEnabled] = useState(true);
-
   return (
     <ToastProvider>
       <div className="showcase-root">
-        <CustomCursor enabled={cursorEnabled} />
         <header className="showcase-header">
           <div>
-            <h1>Phase 3 — Primitive Showcase</h1>
+            <h1>Phase 3: Primitive Showcase</h1>
             <p>Isolated dev surface. Not part of the production app; mounted only behind #showcase.</p>
           </div>
-          <Button tier="secondary" onClick={() => setCursorEnabled(v => !v)}>
-            {cursorEnabled ? 'Disable' : 'Enable'} custom cursor
-          </Button>
         </header>
         <ButtonSection />
         <CardSection />

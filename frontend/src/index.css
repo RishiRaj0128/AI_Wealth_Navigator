@@ -1,4 +1,3 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
 @import url('https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;550;600;650&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
 
 :root {
@@ -59,65 +58,53 @@
      these new tokens as each is rebuilt in its own later phase.
      =========================================================================== */
 
-  /* --- Surface ramp (cool ink) --- */
-  --ink-page: #080B0E;
-  --ink-base: #0C1116;
-  --ink-raised: #121A21;
-  --ink-hover: #18232C;
-  --ink-sunken: #060809;
+  /* --- Surface ramp (Realtime Colors: Midnight Slate & Navy) --- */
+  --ink-page: #0B0F19;
+  --ink-base: #111827;
+  --ink-raised: #162032;
+  --ink-hover: #1E293B;
+  --ink-sunken: #070A10;
 
-  --line-hair: #1C262F;
-  --line-solid: #2A3742;
-  --line-focus: #3F5566;
+  --line-hair: #232F42;
+  --line-solid: #2E3E58;
+  --line-focus: #0284C7;
 
-  /* --- Text ramp ---
-     --cc-text-tertiary is adjusted from the brief's literal #5F7180: computed
-     WCAG contrast against --ink-base is 3.76:1, which fails the brief's own
-     stated 4.5:1 floor for this pair. #6D7F8E clears it at 4.58:1 — the only
-     color value in this token set changed from the brief's literal spec, and
-     changed for the exact reason (and using the exact rule) the brief names. */
-  --cc-text-primary: #E8EEF3;
-  --cc-text-secondary: #94A5B4;
-  --cc-text-tertiary: #6D7F8E;
-  --cc-text-disabled: #3B4854;
+  /* --- Text ramp --- */
+  --cc-text-primary: #F8FAFC;
+  --cc-text-secondary: #94A3B8;
+  --cc-text-tertiary: #64748B;
+  --cc-text-disabled: #334155;
 
   /* --- Semantic color --- */
-  --sev-critical: #FF4D5E;
-  --sev-high: #FF8A3D;
-  --sev-medium: #F5C242;
-  --sev-low: #6B8A9E;
+  --sev-critical: #E11D48;
+  --sev-high: #F97316;
+  --sev-medium: #EAB308;
+  --sev-low: #0EA5E9;
 
-  --state-verified: #29D399;
-  --state-pending: #F5C242;
-  --state-rejected: #6E7C89;
+  --state-verified: #10B981;
+  --state-pending: #EAB308;
+  --state-rejected: #64748B;
 
-  --cc-accent: #4C6FFF;
-  --cc-accent-dim: #2C3F8F;
+  --cc-accent: #0284C7;
+  --cc-accent-dim: #0369A1;
 
-  /* --- Provenance texture ---
-     Phase 5 (Data page): bumped from the Phase 1 literal (0.022 alpha, 1px
-     stripe) after live verification at 1440px showed it was imperceptible
-     during normal viewing — only barely visible at 3x zoom. Widened the
-     stripe and roughly doubled the alpha; still reads as a faint diagonal
-     grain, not a repeating pattern someone would consciously read. */
+  /* --- Provenance texture --- */
   --hatch-simulated: repeating-linear-gradient(
     45deg,
     transparent 0 4px,
-    rgba(255, 255, 255, 0.05) 4px 6px
+    rgba(255, 255, 255, 0.03) 4px 6px
   );
 
-  /* --- Type faces (distinct names from --font-sans/--font-mono above, which
-     already carry the site's actual font swap) so later phases can opt into
-     the type-scale utility classes below explicitly. --- */
+  /* --- Type faces --- */
   --cc-font-ui: 'Instrument Sans', -apple-system, BlinkMacSystemFont, sans-serif;
   --cc-font-data: 'IBM Plex Mono', ui-monospace, monospace;
 
-  /* --- Space / radius / elevation --- */
-  --r-sm: 4px;
-  --r-md: 8px;
-  --r-lg: 14px;
+  /* --- Space / crisp radius / flat elevation --- */
+  --r-sm: 3px;
+  --r-md: 4px;
+  --r-lg: 6px;
   --r-full: 999px;
-  --shadow-float: 0 24px 60px -12px rgba(0, 0, 0, 0.7);
+  --shadow-float: 0 4px 12px rgba(0, 0, 0, 0.3);
 
   /* --- Motion --- */
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
@@ -141,6 +128,33 @@
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* --- Real Skeleton Loaders --- */
+.skeleton-box {
+  display: inline-block;
+  height: 1em;
+  position: relative;
+  overflow: hidden;
+  background-color: var(--ink-hover);
+  border-radius: var(--r-sm);
+}
+.skeleton-box::after {
+  position: absolute;
+  top: 0; right: 0; bottom: 0; left: 0;
+  transform: translateX(-100%);
+  background-image: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0,
+    rgba(255, 255, 255, 0.04) 20%,
+    rgba(255, 255, 255, 0.08) 60%,
+    rgba(255, 255, 255, 0)
+  );
+  animation: skeleton-shimmer 1.8s infinite;
+  content: '';
+}
+@keyframes skeleton-shimmer {
+  100% { transform: translateX(100%); }
 }
 
 /* --- Type scale utility classes (brief §2.5) — later phases apply these by
@@ -263,12 +277,7 @@
 }
 
 .bg-grid {
-  position: absolute;
-  inset: 0;
-  background-image: radial-gradient(rgba(255, 255, 255, 0.028) 1px, transparent 1px);
-  background-size: 28px 28px;
-  -webkit-mask-image: radial-gradient(ellipse 70% 55% at 50% 0%, black 0%, black 40%, transparent 75%);
-  mask-image: radial-gradient(ellipse 70% 55% at 50% 0%, black 0%, black 40%, transparent 75%);
+  display: none;
 }
 
 /* Two stacked glow layers, faded SEQUENTIALLY (never simultaneously) by
@@ -288,44 +297,7 @@
    the incoming hue up from 0. App.jsx splits the brief's 1200ms budget into
    two sequential 600ms legs to do this. */
 .bg-glow-layer {
-  position: absolute;
-  top: -20%;
-  left: 50%;
-  transform: translateX(-50%);
-  /* width: min(900px, 100vw) — not a flat 900px — because this element's
-     centered, negative-offset footprint (-255px to 645px at a 390px
-     viewport) triggers a confirmed real Chromium bug where
-     document.body.scrollWidth includes a fixed-ancestor's absolutely
-     positioned descendant's full footprint even though the ancestor
-     (#bg-layers) visually clips it via overflow:hidden, and even with
-     `contain: layout paint` added to that ancestor (tried, measured,
-     didn't change the reported scrollWidth). Capping the width here
-     removes the phantom footprint at its source instead of continuing to
-     fight the browser's scrollWidth accounting — it very slightly
-     narrows the glow's horizontal extent on phones, which is invisible
-     in practice since --dur-slow/opacity already keep it extremely
-     subtle. */
-  width: min(900px, 100vw);
-  height: 900px;
-  border-radius: 50%;
-  opacity: 0;
-  filter: blur(40px);
-  /* Each leg is half the brief's 1200ms budget: App.jsx fades the outgoing
-     hue to 0 first, then (only once it's fully gone) fades the incoming hue
-     in — sequential, never simultaneous, so two different hues are never
-     both visible at once. See the comment above .bg-glow-layer for why
-     simultaneous alpha-blending of two colors is the actual problem, not
-     just single-property RGB interpolation. */
-  transition: opacity 600ms var(--ease-inout);
-  pointer-events: none;
-}
-
-.bg-glow-layer[data-layer="a"] {
-  background: radial-gradient(circle, var(--glow-hue-a, var(--cc-accent)) 0%, transparent 70%);
-}
-
-.bg-glow-layer[data-layer="b"] {
-  background: radial-gradient(circle, var(--glow-hue-b, var(--cc-accent)) 0%, transparent 70%);
+  display: none;
 }
 
 .bg-grain {
@@ -343,98 +315,6 @@
   z-index: 1;
 }
 
-/* --- Custom cursor (Phase 2.1 — reconciled with the original §3.3 table) ---
-   Rendered by CustomCursor.jsx, which only mounts these nodes when JS has
-   confirmed: pointer:fine, no prefers-reduced-motion, and the user hasn't
-   disabled it via the header toggle. The native cursor is hidden ONLY via
-   the .cc-custom-cursor-active class that same component adds to <html>
-   right after mounting — so a guard failure, a disabled toggle, or a JS
-   error all leave the native cursor working, never a blank cursor.
-
-   Sizing, shape, border-radius and position are almost entirely set
-   imperatively per frame in CustomCursor.jsx (that's what "ring snaps to
-   the hovered element's actual bounding box" / "full-width horizontal
-   line" / lerp-follow actually require) — this CSS only supplies base
-   positioning, default appearance, and a transition on the handful of
-   properties that benefit from smoothing between discrete state changes.
-   `transform` is deliberately NOT transitioned here: it's rewritten every
-   animation frame in JS (lerp for the default state, direct snap for
-   hover/row), and a CSS transition on it would fight that and introduce
-   extra lag exactly where the spec calls for zero lag or an exact snap. */
-.cc-cursor-dot,
-.cc-cursor-ring,
-.cc-cursor-crosshair {
-  position: fixed;
-  top: 0;
-  left: 0;
-  pointer-events: none;
-  z-index: 9999;
-  will-change: transform;
-}
-
-/* No margin-based centering here on purpose: the ring needs to be
-   top-left-aligned (not centered) when it snaps to an element's real
-   bounding box in the hover/row states, so CustomCursor.jsx computes the
-   correct centering offset itself, per state, directly in the translate3d
-   it writes every frame. */
-.cc-cursor-dot {
-  width: 5px;
-  height: 5px;
-  margin: 0;
-  border-radius: 50%;
-  background: var(--cc-accent);
-  transition: width var(--dur-fast) var(--ease-out), height var(--dur-fast) var(--ease-out),
-              border-radius var(--dur-fast) var(--ease-out), opacity var(--dur-fast) var(--ease-out);
-}
-
-.cc-cursor-ring {
-  width: 26px;
-  height: 26px;
-  margin: 0;
-  border-radius: 50%;
-  /* Phase 6-Final: was --line-solid (#2A3742), which computes to only a
-     1.62:1 contrast ratio against --ink-page (#080B0E) — real WCAG math,
-     not a guess — meaning the default-state ring was very nearly invisible
-     against the page background outside of hover states. --cc-text-tertiary
-     clears 4.77:1 against the same background (it's the same color already
-     proven legible for muted body text sitewide), so the idle cursor is now
-     actually perceptible without becoming a loud/bright ring. */
-  border: 1px solid var(--cc-text-tertiary);
-  background: rgba(255, 255, 255, 0.02);
-  transition: width var(--dur-fast) var(--ease-snap), height var(--dur-fast) var(--ease-snap),
-              border-radius var(--dur-fast) var(--ease-snap), border-color var(--dur-fast) var(--ease-out),
-              background-color var(--dur-fast) var(--ease-out), opacity var(--dur-fast) var(--ease-out);
-}
-
-/* 18px crosshair (table-row state) — two 1px bars, hidden by default. */
-.cc-cursor-crosshair {
-  background: var(--cc-accent);
-  opacity: 0;
-  transition: opacity var(--dur-fast) var(--ease-out);
-}
-.cc-cursor-crosshair-h { width: 18px; height: 1px; }
-.cc-cursor-crosshair-v { width: 1px; height: 18px; }
-
-.cc-cursor-ripple {
-  position: fixed;
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  border: 1.5px solid var(--cc-accent);
-  pointer-events: none;
-  z-index: 9998;
-}
-
-.cc-custom-cursor-active,
-.cc-custom-cursor-active * {
-  cursor: none !important;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .cc-cursor-dot, .cc-cursor-ring, .cc-cursor-crosshair {
-    transition: none !important;
-  }
-}
 
 * {
   box-sizing: border-box;
@@ -523,18 +403,17 @@ body {
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 10px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
 }
 
-/* Glassmorphism Card */
+/* Restrained Panel (Replaces floating glassmorphism) */
 .glass-panel {
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
-  border-radius: 12px;
-  backdrop-filter: blur(12px);
-  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.5);
-  transition: all 0.2s ease;
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  transition: border-color 0.2s ease;
 }
 
 .glass-panel:hover {
@@ -642,25 +521,21 @@ body {
 }
 
 .btn-primary {
-  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  background: var(--cc-accent);
   color: white;
-  box-shadow: 0 2px 10px rgba(37, 99, 235, 0.35);
+  border: 1px solid var(--cc-accent-dim);
 }
 .btn-primary:hover {
-  background: linear-gradient(135deg, #60a5fa, #3b82f6);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.45);
+  background: var(--cc-accent-dim);
 }
 
 .btn-approve {
-  background: linear-gradient(135deg, #10b981, #059669);
-  color: white;
-  box-shadow: 0 2px 12px rgba(16, 185, 129, 0.35);
+  background: var(--state-verified);
+  color: #0c1116;
+  border: 1px solid var(--state-verified);
 }
 .btn-approve:hover {
-  background: linear-gradient(135deg, #34d399, #10b981);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 16px rgba(16, 185, 129, 0.5);
+  background: #24b884;
 }
 
 .btn-reject {
@@ -859,11 +734,7 @@ body {
   font-family: var(--cc-font-ui);
 }
 .cc-card-interactive {
-  /* No `cursor: none` here — the native cursor must only ever be hidden by
-     the global `.cc-custom-cursor-active` rule in the custom-cursor section
-     above, once CustomCursor.jsx has actually confirmed it's mounted. This
-     element just needs its native cursor to read as clickable when the
-     custom cursor is off/unavailable, same as any other real button. */
+  cursor: pointer;
   transition: background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out);
 }
 .cc-card-interactive:hover {

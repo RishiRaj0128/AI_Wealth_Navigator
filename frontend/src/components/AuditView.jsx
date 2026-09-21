@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { RotateCcw, ChevronDown, ChevronUp, ShieldCheck } from 'lucide-react';
+import { RotateCcw, ChevronDown, ChevronUp, ShieldCheck } from '../icons';
 import { fetchAuditLogs } from '../api';
 import { Button, Chip } from '../primitives';
 import { usePrefersReducedMotion } from '../hooks/useMotionGuards';
 
 const STATUS_TONE = { executed: 'verified', approved: 'accent', rejected: 'neutral', pending_approval: 'medium' };
-const STATUS_LABEL = { executed: 'Executed — simulation', approved: 'Approved by human', rejected: 'Rejected', pending_approval: 'Pending approval' };
+const STATUS_LABEL = { executed: 'Executed (simulation)', approved: 'Approved by human', rejected: 'Rejected', pending_approval: 'Pending approval' };
 const RISK_TONE = { RED: 'critical', YELLOW: 'medium', GREEN: 'verified' };
 
 export default function AuditView() {
@@ -44,7 +44,7 @@ export default function AuditView() {
           </div>
           <h1 className="text-page-title">Audit Log</h1>
           <p className="cc-page-desc">
-            Every recommendation, approval, and execution is recorded — permanent, forensic, immutable in PostgreSQL.
+            Every recommendation, approval, and execution is recorded. Permanent, forensic, immutable in PostgreSQL.
           </p>
           <p style={{ margin: '10px 0 0', fontSize: '12px', color: 'var(--cc-text-tertiary)', letterSpacing: '0.01em' }}>
             AI can recommend. Humans approve. Actions are recorded.
@@ -119,7 +119,7 @@ export default function AuditView() {
                             </div>
                             <div>
                               <p className="cc-section-eyebrow" style={{ marginBottom: '4px' }}>Action ID &amp; investigation ID</p>
-                              <div className="text-data">Action: {log.action_id || '—'} · Inv: {log.investigation_id || '—'}</div>
+                              <div className="text-data">Action: {log.action_id || '-'} · Inv: {log.investigation_id || '-'}</div>
                             </div>
                             <div>
                               <p className="cc-section-eyebrow" style={{ marginBottom: '4px' }}>Governance policy</p>

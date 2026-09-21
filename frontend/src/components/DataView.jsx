@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Zap, Plus, Download, Sparkles } from 'lucide-react';
+import { Zap, Plus, Download, TrendingUp } from '../icons';
 import {
   fetchSourceStats,
   syncRazorpay,
@@ -71,8 +71,8 @@ export default function DataView({ onRefreshAll, incidents = [], onOpenIncident,
       const ingestLine = `+${res.payments_ingested} payments, +${res.webhooks_ingested} webhooks, +${res.refunds_ingested} refunds ingested.`;
       const count = res.anomalies_detected || 0;
       const outcomeLine = count > 0
-        ? `Detection scan complete — ${count} active anomal${count === 1 ? 'y' : 'ies'} (${(res.incidents || []).map(i => i.incident_id).join(', ')}).`
-        : 'Detection scan complete — no significant anomaly found.';
+        ? `Detection scan complete: ${count} active anomal${count === 1 ? 'y' : 'ies'} (${(res.incidents || []).map(i => i.incident_id).join(', ')}).`
+        : 'Detection scan complete: no significant anomaly found.';
 
       setLabMsg({ type: 'success', text: `${ingestLine} ${outcomeLine}` });
       await loadProvenance();
@@ -105,7 +105,7 @@ export default function DataView({ onRefreshAll, incidents = [], onOpenIncident,
       if (res.processing_status === 'failed') {
         setActionMsg({ type: 'error', text: `Ingestion failed: ${res.error_message || 'Unknown error'}` });
       } else {
-        setActionMsg({ type: 'success', text: `Sent to Financial Copilot — ${res.transactions_extracted} transactions indexed. Opening Copilot…` });
+        setActionMsg({ type: 'success', text: `Sent to Financial Copilot: ${res.transactions_extracted} transactions indexed. Opening Copilot...` });
         if (onOpenCopilot) onOpenCopilot();
       }
     } catch (e) {
@@ -226,7 +226,7 @@ export default function DataView({ onRefreshAll, incidents = [], onOpenIncident,
           below — this is context for the table, not a peer section. */}
       <div className="cc-provenance">
         <div className="cc-provenance-panel">
-          <p className="cc-section-eyebrow">Real — Razorpay Test Mode</p>
+          <p className="cc-section-eyebrow">Real (Razorpay Test Mode)</p>
           <div className="cc-provenance-metrics">
             <Metric size="sm" label="Orders" value={realOrders} sub="created, not paid" />
             <Metric size="sm" label="Payments" value={realPayments} sub={`${realPaymentsCaptured} captured`} />
@@ -235,7 +235,7 @@ export default function DataView({ onRefreshAll, incidents = [], onOpenIncident,
           </div>
           {detectionVolume && !detectionVolume.razorpay_test_sufficient_for_detection && (
             <p className="cc-provenance-note" style={{ color: 'var(--sev-medium)' }}>
-              {detectionVolume.razorpay_test_payment_count} payment attempt{detectionVolume.razorpay_test_payment_count === 1 ? '' : 's'} — intentionally below the {detectionVolume.min_sample_size}+ threshold used for reliable detection.
+              {detectionVolume.razorpay_test_payment_count} payment attempt{detectionVolume.razorpay_test_payment_count === 1 ? '' : 's'} (intentionally below the {detectionVolume.min_sample_size}+ threshold used for reliable detection).
             </p>
           )}
         </div>
@@ -244,14 +244,14 @@ export default function DataView({ onRefreshAll, incidents = [], onOpenIncident,
 
         <div className="cc-provenance-panel cc-provenance-simulated">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-            <p className="cc-section-eyebrow" style={{ margin: 0 }}>Simulated — Incident Lab</p>
+            <p className="cc-section-eyebrow" style={{ margin: 0 }}>Simulated (Incident Lab)</p>
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
               <Button tier="ghost" onClick={handleDownload} state={downloading ? 'loading' : 'idle'} loadingLabel="Preparing">
                 <Download size={12} strokeWidth={2} style={{ marginRight: 4 }} />
                 Download data
               </Button>
               <Button tier="ghost" onClick={handleIngestToCopilot} state={ingesting ? 'loading' : 'idle'} loadingLabel="Sending">
-                <Sparkles size={12} strokeWidth={2} style={{ marginRight: 4 }} />
+                <TrendingUp size={12} strokeWidth={2} style={{ marginRight: 4 }} />
                 Ingest into Financial Copilot
               </Button>
               <Button tier="ghost" onClick={handleGenerateLab} state={generatingLab ? 'loading' : 'idle'} loadingLabel="Generating">
@@ -280,7 +280,7 @@ export default function DataView({ onRefreshAll, incidents = [], onOpenIncident,
       </div>
 
       <p className="cc-provenance-footnote">
-        Orders below are created via Razorpay's live test-mode Orders API — an order being created does not mean a payment
+        Orders below are created via Razorpay's live test-mode Orders API. An order being created does not mean a payment
         was made. Captured-payment volume stays at this account's real, unpadded state. Incident Lab data is a synthetic
         financial event stream, not a real Razorpay payment. Both sources persist to the same PostgreSQL database with an
         immutable, queryable <span className="text-data" style={{ color: 'inherit' }}>source</span> tag on every row.
@@ -300,8 +300,11 @@ export default function DataView({ onRefreshAll, incidents = [], onOpenIncident,
         </p>
 
         {loading ? (
-          <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--cc-text-tertiary)', fontSize: '13px' }}>
-            Loading {activeTable} from PostgreSQL…
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '16px 0' }}>
+            <div className="skeleton-box" style={{ width: '100%', height: '32px' }} />
+            <div className="skeleton-box" style={{ width: '100%', height: '32px' }} />
+            <div className="skeleton-box" style={{ width: '100%', height: '32px' }} />
+            <div className="skeleton-box" style={{ width: '100%', height: '32px' }} />
           </div>
         ) : tableData.length === 0 ? (
           <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--cc-text-tertiary)', fontSize: '13px' }}>
@@ -325,7 +328,7 @@ export default function DataView({ onRefreshAll, incidents = [], onOpenIncident,
                     key={idx}
                     onClick={matchedIncident ? () => onOpenIncident && onOpenIncident(matchedIncident) : undefined}
                     data-cursor={matchedIncident ? 'hover' : undefined}
-                    title={matchedIncident ? `Open ${matchedIncident.incident_id} — ${matchedIncident.title}` : undefined}
+                    title={matchedIncident ? `Open ${matchedIncident.incident_id}: ${matchedIncident.title}` : undefined}
                     style={matchedIncident ? { cursor: 'pointer' } : undefined}
                     className={matchedIncident ? 'cc-data-row-anomalous' : undefined}
                   >
@@ -369,7 +372,7 @@ export default function DataView({ onRefreshAll, incidents = [], onOpenIncident,
                       <>
                         <td className="cc-data-mono cc-data-primary">{row.event_id || row.external_event_id}</td>
                         <td style={{ fontWeight: 600 }}>{row.event_type}</td>
-                        <td className="cc-data-mono cc-data-quiet">{row.entity_id || '—'}</td>
+                        <td className="cc-data-mono cc-data-quiet">{row.entity_id || '-'}</td>
                         <td><Chip tone={row.signature_verified ? 'verified' : 'neutral'}>{row.signature_verified ? 'HMAC verified' : 'Standard'}</Chip></td>
                         <td className="cc-data-quiet">{sourceLabel(row.source || 'razorpay_webhook')}</td>
                         <td className="text-data cc-data-quiet">{new Date(row.received_at).toLocaleString()}</td>

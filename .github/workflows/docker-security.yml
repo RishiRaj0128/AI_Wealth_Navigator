@@ -1,0 +1,94 @@
+﻿name: Container Build & Image Security
+
+on:
+  push:
+    branches: [main, Rishi]
+  pull_request:
+    branches: [main, Rishi]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+  security-events: write
+
+jobs:
+  docker-security:
+    name: Container Build, Trivy Security Scan & Verification
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Scan Dockerfiles with Trivy (Config / Best Practices)
+        uses: aquasecurity/trivy-action@0.29.0
+        with:
+          scan-type: 'config'
+          scan-ref: '.'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0'
+
+      - name: Build Backend Image
+        id: build-backend
+        run: |
+          echo "Building backend container image..."
+          docker build -t wealth-navigator-backend:${{ github.sha }} ./backend
+
+      - name: Build Frontend Image
+        id: build-frontend
+        run: |
+          echo "Building frontend container image..."
+          docker build -t wealth-navigator-frontend:${{ github.sha }} ./frontend
+
+      - name: Scan Backend Image with Trivy
+        uses: aquasecurity/trivy-action@0.29.0
+        with:
+          image-ref: wealth-navigator-backend:${{ github.sha }}
+          vuln-type: 'os,library'
+          ignore-unfixed: true
+          format: 'table'
+          severity: 'CRITICAL'
+          exit-code: '1'
+
+      - name: Scan Frontend Image with Trivy
+        if: always() && steps.build-frontend.outcome == 'success'
+        uses: aquasecurity/trivy-action@0.29.0
+        with:
+          image-ref: wealth-navigator-frontend:${{ github.sha }}
+          vuln-type: 'os,library'
+          ignore-unfixed: true
+          format: 'table'
+          severity: 'CRITICAL'
+          exit-code: '1'
+
+      - name: Log in to GitHub Container Registry
+        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tag and Push Images to GHCR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          BACKEND_IMAGE="ghcr.io/$OWNER/wealth-navigator-backend"
+          FRONTEND_IMAGE="ghcr.io/$OWNER/wealth-navigator-frontend"
+          SHA_TAG="${{ github.sha }}"
+
+          docker tag wealth-navigator-backend:$SHA_TAG $BACKEND_IMAGE:$SHA_TAG
+          docker tag wealth-navigator-backend:$SHA_TAG $BACKEND_IMAGE:latest
+
+          docker tag wealth-navigator-frontend:$SHA_TAG $FRONTEND_IMAGE:$SHA_TAG
+          docker tag wealth-navigator-frontend:$SHA_TAG $FRONTEND_IMAGE:latest
+
+          docker push $BACKEND_IMAGE:$SHA_TAG
+          docker push $BACKEND_IMAGE:latest
+
+          docker push $FRONTEND_IMAGE:$SHA_TAG
+          docker push $FRONTEND_IMAGE:latest

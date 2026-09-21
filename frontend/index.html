@@ -4,19 +4,16 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Wealth Navigator AI — Personal Financial Wellness &amp; Intelligence</title>
+    <title>Wealth Navigator AI: Personal Financial Wellness &amp; Intelligence</title>
   </head>
   <body>
     <div id="bg-layers" aria-hidden="true">
       <div class="bg-floor"></div>
-      <div class="bg-grid"></div>
-      <div class="bg-glow-layer" data-layer="a"></div>
-      <div class="bg-glow-layer" data-layer="b"></div>
-      <svg class="bg-grain" width="100%" height="100%">
-        <filter id="cc-grain">
-          <feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="2" stitchTiles="stitch" />
-        </filter>
-        <rect width="100%" height="100%" filter="url(#cc-grain)" />
+      <svg class="bg-vector-contour" viewBox="0 0 1440 900" fill="none" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none" style="position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; opacity: 0.25;">
+        <path d="M0 120 C 360 40, 720 200, 1080 100 C 1260 50, 1380 80, 1440 90 L1440 0 L0 0 Z" fill="#0284C7" fill-opacity="0.04" />
+        <path d="M0 280 C 420 180, 840 360, 1200 240 C 1320 200, 1400 230, 1440 240" stroke="#232F42" stroke-width="1" stroke-dasharray="3 5" />
+        <path d="M0 540 C 380 640, 780 440, 1140 560 C 1300 620, 1380 580, 1440 570" stroke="#232F42" stroke-width="1" />
+        <path d="M0 760 C 480 860, 960 680, 1440 820" stroke="#0284C7" stroke-width="1" stroke-opacity="0.15" />
       </svg>
     </div>
     <div id="root"></div>

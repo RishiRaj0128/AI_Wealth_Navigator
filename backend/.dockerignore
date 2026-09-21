@@ -1,0 +1,14 @@
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.venv
+venv
+env
+tests/
+.git
+.gitignore
+.pytest_cache
+.ruff_cache
+requirements-dev.txt
+*.log

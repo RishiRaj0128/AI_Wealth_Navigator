@@ -1,0 +1,124 @@
+﻿name: Master Quality Gate
+
+on:
+  push:
+    branches: [main, Rishi]
+  pull_request:
+    branches: [main, Rishi]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  checks: read
+  pull-requests: read
+
+jobs:
+  quality-gate:
+    name: quality-gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Evaluate Insurance Insight Nexus Quality & Security Gates
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COMMIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          echo "=========================================================="
+          echo "  Insurance Insight Nexus Enterprise Quality Gate Evaluator"
+          echo "=========================================================="
+          echo "Target Commit: $COMMIT_SHA"
+          echo "Repository: $REPO"
+
+          MAX_ATTEMPTS=60
+          SLEEP_SECONDS=15
+          ATTEMPT=0
+
+          REQUIRED_GATES=(
+            "Backend Code Style (Ruff)"
+            "Frontend Code Style (Oxlint)"
+            "Secret Scanning (Gitleaks)"
+            "Backend SAST Scan (Bandit)"
+            "CodeQL SAST (python)"
+            "Backend Dependencies (pip-audit)"
+            "Frontend Dependencies (npm audit)"
+            "Cross-Ecosystem Advisory Scan (OSV-Scanner)"
+            "Backend Build & Verify (Python 3.11 + Pytest)"
+            "Frontend Build & Test (Node.js + Vite)"
+            "Container Build, Trivy Security Scan & Verification"
+          )
+
+          echo "Monitoring required quality and security gates until completion..."
+
+          while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+            ATTEMPT=$((ATTEMPT + 1))
+            PENDING=0
+            FAILED=0
+            FAILED_GATES=()
+
+            CHECKS_JSON=$(gh api "/repos/$REPO/commits/$COMMIT_SHA/check-runs" --jq '.check_runs' 2>/dev/null || echo "[]")
+
+            for GATE in "${REQUIRED_GATES[@]}"; do
+              STATUS=$(echo "$CHECKS_JSON" | jq -r --arg g "$GATE" '.[] | select(.name == $g) | .status' | head -n 1)
+              CONCLUSION=$(echo "$CHECKS_JSON" | jq -r --arg g "$GATE" '.[] | select(.name == $g) | .conclusion' | head -n 1)
+
+              if [ -z "$STATUS" ] || [ "$STATUS" = "in_progress" ] || [ "$STATUS" = "queued" ]; then
+                PENDING=$((PENDING + 1))
+              elif [ "$CONCLUSION" != "success" ] && [ "$CONCLUSION" != "neutral" ] && [ "$CONCLUSION" != "skipped" ]; then
+                FAILED=$((FAILED + 1))
+                FAILED_GATES+=("$GATE: $CONCLUSION")
+              fi
+            done
+
+            if [ $PENDING -eq 0 ]; then
+              echo "All prerequisite checks have completed."
+              break
+            fi
+
+            echo "[Attempt $ATTEMPT/$MAX_ATTEMPTS] $PENDING checks pending... waiting ${SLEEP_SECONDS}s."
+            sleep $SLEEP_SECONDS
+          done
+
+          echo "=========================================================="
+          echo "               GATE EVALUATION SUMMARY                    "
+          echo "=========================================================="
+
+          echo "## Quality & Security Gate Evaluation" >> $GITHUB_STEP_SUMMARY
+          echo "| Gate | Status | Conclusion |" >> $GITHUB_STEP_SUMMARY
+          echo "| :--- | :--- | :--- |" >> $GITHUB_STEP_SUMMARY
+
+          for GATE in "${REQUIRED_GATES[@]}"; do
+            STATUS=$(echo "$CHECKS_JSON" | jq -r --arg g "$GATE" '.[] | select(.name == $g) | .status' | head -n 1)
+            CONCLUSION=$(echo "$CHECKS_JSON" | jq -r --arg g "$GATE" '.[] | select(.name == $g) | .conclusion' | head -n 1)
+            [ -z "$STATUS" ] && STATUS="not_run"
+            [ -z "$CONCLUSION" ] && CONCLUSION="pending"
+
+            ICON="⏳"
+            if [ "$CONCLUSION" = "success" ]; then
+              ICON="✅"
+            elif [ "$CONCLUSION" = "failure" ]; then
+              ICON="❌"
+            elif [ "$CONCLUSION" = "skipped" ] || [ "$CONCLUSION" = "neutral" ]; then
+              ICON="⚪"
+            fi
+
+            echo "$ICON $GATE: status=$STATUS, conclusion=$CONCLUSION"
+            echo "| $GATE | $STATUS | $ICON $CONCLUSION |" >> $GITHUB_STEP_SUMMARY
+          done
+
+          if [ $FAILED -gt 0 ]; then
+            echo ""
+            echo "❌ MASTER QUALITY GATE FAILED! The following required checks failed:"
+            for FG in "${FAILED_GATES[@]}"; do
+              echo "  - $FG"
+            done
+            exit 1
+          fi
+
+          if [ $PENDING -gt 0 ]; then
+            echo ""
+            echo "⏱️ Timed out waiting for all required checks to complete."
+            exit 1
+          fi
+
+          echo ""
+          echo "✅ ALL REQUIRED GATES PASSED! Quality gate is GREEN."

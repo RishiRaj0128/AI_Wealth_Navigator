@@ -36,7 +36,7 @@ export default function EvaluationView() {
     try {
       const res = await runBatchEvaluation();
       setEvalData(res);
-      setMsg({ type: 'success', text: `✓ Batch evaluation complete across ${res.total_cases} labeled ground-truth scenarios.` });
+      setMsg({ type: 'success', text: `Batch evaluation complete across ${res.total_cases} labeled ground-truth scenarios.` });
     } catch (e) {
       setMsg({ type: 'error', text: `Evaluation run failed: ${e.message}` });
     } finally {
@@ -355,7 +355,7 @@ export default function EvaluationView() {
                     </span>
                   </td>
                   <td style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
-                    {r.incident_id || '—'}
+                    {r.incident_id || '-'}
                   </td>
                 </tr>
               ))}

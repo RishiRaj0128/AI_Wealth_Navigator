@@ -1,6 +1,6 @@
 # Wealth Navigator AI
 
-**Personal financial wellness platform — understand your position, explore what-if scenarios, and get proactive, explainable next-best-action recommendations.**
+**A personal financial wellness platform to understand your financial position, explore what-if scenarios, and receive proactive, explainable next-best-action recommendations.**
 
 ---
 
@@ -8,13 +8,13 @@
 
 Personal financial questions rarely have simple, one-size-fits-all answers. "Can I afford to save ₹10,000 more each month?" requires understanding real net cash flow across debits and credits. "When will I reach my goal?" demands deterministic projections grounded in actual historical spending patterns. "Where can I cut back?" requires detecting subtle month-over-month category surges.
 
-Generic AI chatbots fail at this because they hallucinate projection figures, invent interest or savings rates, and cannot distinguish verified transaction facts from plausible-sounding guesses. In personal finance, a confident but fabricated projection is worse than no advice at all.
+Generic AI chatbots often hallucinate projection figures, invent interest or savings rates, and cannot distinguish verified transaction facts from plausible-sounding guesses. In personal finance, a confident but fabricated projection is worse than no advice at all.
 
 ## The Solution
 
 **Wealth Navigator AI** decouples mathematical computation and evidence retrieval from AI reasoning. All projections, scenario simulations, category comparisons, and action recommendations are executed by **authoritative, deterministic backend tools** directly against verified PostgreSQL financial records. 
 
-Gemini acts solely as an evidence-grounded advisor: it orchestrates tool selection, synthesizes findings, and translates raw numbers into clear, plain-language guidance—complete with an explicit, visible list of assumptions behind every projection. Gemini never calculates projections or writes SQL itself.
+Gemini acts solely as an evidence-grounded advisor: it orchestrates tool selection, synthesizes findings, and translates raw numbers into clear, plain-language guidance, complete with an explicit, visible list of assumptions behind every projection. Gemini never calculates projections or writes SQL itself.
 
 ## Why Wealth Navigator AI?
 
@@ -63,17 +63,17 @@ Gemini never receives raw database access or arbitrary arithmetic authority. It 
 
 ## What You Can Do
 
-**Goals & What-If Scenarios** — Define financial goals (target amount, date, risk preference). Run interactive what-if simulations adjusting extra monthly savings to project accelerated completion dates and see the exact time saved, with all assumptions made visible.
+**Goals & What-If Scenarios**: Define financial goals (target amount, date, risk preference). Run interactive what-if simulations adjusting extra monthly savings to project accelerated completion dates and see the exact time saved, with all assumptions made visible.
 
-**Proactive Next-Best Actions** — Receive deterministic, rule-based recommendations that pinpoint spending surges (>15% MoM increase) and calculate how curbing those expenses directly accelerates your financial goals.
+**Proactive Next-Best Actions**: Receive deterministic, rule-based recommendations that pinpoint spending surges (>15% MoM increase) and calculate how curbing those expenses directly accelerates your financial goals.
 
-**AI Advisor (Financial Copilot)** — Ask natural-language questions regarding your finances, spending habits, and uploaded statements. Receive evidence-grounded answers citing specific transactions and document excerpts without hallucinations.
+**AI Advisor (Financial Copilot)**: Ask natural-language questions regarding your finances, spending habits, and uploaded statements. Receive evidence-grounded answers citing specific transactions and document excerpts without hallucinations.
 
-**Financial Overview** — High-level dashboard showing total transactions, connected accounts, indexed documents, and cash-flow health.
+**Financial Overview**: High-level dashboard showing total transactions, connected accounts, indexed documents, and cash-flow health.
 
-**Document Intelligence** — Upload bank statements, invoices, and fee policies (PDF, CSV, XLSX). Automatically parses structured line items and generates semantic embeddings for RAG retrieval.
+**Document Intelligence**: Upload bank statements, invoices, and fee policies (PDF, CSV, XLSX). Automatically parses structured line items and generates semantic embeddings for RAG retrieval.
 
-**Investigation & Audit Trail** — Built-in operational monitoring and audit logging inherited from the core platform, logging every recommendation run, tool execution, and governed action.
+**Investigation & Audit Trail**: Built-in operational monitoring and audit logging inherited from the core platform, logging every recommendation run, tool execution, and governed action.
 
 ---
 
@@ -84,42 +84,45 @@ Gemini never receives raw database access or arbitrary arithmetic authority. It 
         ↓
    Financial Copilot Agent
         ↓
- ┌──────────────┬───────────────────┐
- │  SQL lookup   │   Document search  │
- │  (the real    │   (the fee policy, │
- │  transaction) │   embedded chunks) │
- └──────┬────────┴─────────┬─────────┘
+ ┌──────┴────────┬─────────┐
+ │ get_trans-    │ search_ │
+ │ actions       │ docu-   │
+ │ (finds the    │ ments   │
+ │ ₹1,999 fee    │ (finds  │
+ │ transaction)  │ fee     │
+ │               │ policy) │
+ └──────┬────────┴─────────┘
         └──────┬────────────┘
                ↓
      Gemini reasons over both
                ↓
-"Yes — ₹1,999 late-payment fee on 2026-08-14,
+"Yes: ₹1,999 late-payment fee on 2026-08-14,
  matching Section 1 of the uploaded fee policy."
         + evidence + sources consulted
 ```
 
-This is a real, verified output from the running app — not an illustrative mockup.
+This is a real, verified output from the running app, captured from live execution.
 
 ---
 
 ## Current Status
 
 Feature-complete and demo-ready. All five navigated pages (Overview, Data, Investigation,
-Financial Copilot, Audit Log) are finished for this phase — this is a portfolio/internship
+Financial Copilot, Audit Log) are finished for this phase. This is a portfolio/hackathon
 prototype, not a claimed production financial system, and it runs against Razorpay **Test
 Mode** plus a clearly labeled synthetic "Incident Lab" dataset (see "Database tables" further
 down for exactly how those are separated).
 
 Known limitations, stated plainly rather than hidden:
 - Case-memory "similarity" is a composite score (real cosine similarity plus rule-based
-  category/entity/error-code bonuses) over a small seeded set of historical precedents — not a
+  category/entity/error-code bonuses) over a small seeded set of historical precedents, not a
   large-scale learned similarity model.
 - RAG retrieval uses real Gemini embeddings but no vector index (`pgvector` isn't installed on
-  the target PostgreSQL) — cosine similarity is computed in Python at query time, which is fine
+  the target PostgreSQL); cosine similarity is computed in Python at query time, which is fast and deterministic
   at this data scale.
 - PDF/CSV/XLSX parsing is best-effort (regex for PDFs, column heuristics for spreadsheets); a
   statement layout that doesn't match yields zero extracted transactions rather than a guess.
-- Governed actions execute as a logged, safe simulation — nothing in this codebase ever mutates
+- Governed actions execute as a logged, safe simulation; nothing in this codebase ever mutates
   a real Razorpay resource.
 
 ---
@@ -159,8 +162,8 @@ Known limitations, stated plainly rather than hidden:
    npm install
    npm run dev
    ```
-4. **Required environment variables** (see `.env.example`): `DATABASE_URL`, `GEMINI_API_KEY`, `GEMINI_MODEL`. Razorpay credentials are optional — without them the app runs fully on Incident Lab simulation data and user-uploaded financial documents.
-5. **Tests:** `cd backend && pytest` — runs against an isolated `<database>_test` database, never the real one.
+4. **Required environment variables** (see `.env.example`): `DATABASE_URL`, `GEMINI_API_KEY`, `GEMINI_MODEL`. Razorpay credentials are optional: without them the app runs fully on Incident Lab simulation data and user-uploaded financial documents.
+5. **Tests:** `cd backend && pytest`: runs against an isolated `<database>_test` database, never the real one.
 
 On Windows, `run_project.ps1` / `run_project.bat` starts PostgreSQL, the backend, and the frontend in one step.
 
@@ -202,15 +205,15 @@ wealth-navigator/
 ## Technical Deep Dive
 
 <details>
-<summary><strong>RAG architecture — ingestion, retrieval, grounding</strong></summary>
+<summary><strong>RAG architecture: ingestion, retrieval, grounding</strong></summary>
 
 **Ingestion:** upload → detect file type → extract text/table rows → CSV/XLSX use column-heuristic transaction extraction (date, merchant, debit/credit, balance); PDFs use best-effort regex extraction (a non-matching layout yields zero transactions, never invented ones) → deterministic keyword-based category tagging (a backend rule, not a model decision) → section-aware chunking (per-page/paragraph for PDFs, per ~20-row window for spreadsheets) → each chunk embedded and stored → original file bytes stored for preview/download → document marked READY or FAILED with a real reason.
 
-**Retrieval:** this project does **not** use pgvector — it isn't installed on the target PostgreSQL instance. Retrieval instead uses real embeddings from Gemini's embedding model (`gemini-embedding-001`, 3072-dimensions), stored as JSON in a regular PostgreSQL column, ranked by cosine similarity computed in Python at query time. This is genuine embedding-based semantic search, just without a dedicated vector index — a larger deployment would be the natural point to introduce one.
+**Retrieval:** this project does **not** use pgvector: it isn't installed on the target PostgreSQL instance. Retrieval instead uses real embeddings from Gemini's embedding model (`gemini-embedding-001`, 3072-dimensions), stored as JSON in a regular PostgreSQL column, ranked by cosine similarity computed in Python at query time. This is genuine embedding-based semantic search without requiring a dedicated vector index.
 
-**Grounding:** the retrieval and SQL tools' outputs are the only evidence handed to Gemini for a question. The architecture minimizes hallucination by requiring every financial claim in the final answer to be traced to a specific tool result, and by instructing the model to flag `insufficient_evidence: true` when the tools didn't return enough to answer confidently — this is a prompting and evidence-gathering discipline, not a guarantee that hallucination is impossible.
+**Grounding:** the retrieval and SQL tools' outputs are the only evidence handed to Gemini for a question. The architecture minimizes hallucination by requiring every financial claim in the final answer to be traced to a specific tool result, and by instructing the model to flag `insufficient_evidence: true` when the tools didn't return enough to answer confidently (this is a prompting and evidence-gathering discipline, not an absolute guarantee).
 
-**Provenance:** every answer carries evidence entries tagged `transaction`, `document`, or `calculation` (with the transaction ID or document filename/page/section behind each one), plus a "sources consulted" list — nothing is listed unless a retrieval call actually returned it.
+**Provenance:** every answer carries evidence entries tagged `transaction`, `document`, or `calculation` (with the transaction ID or document filename/page/section behind each one), plus a "sources consulted" list: nothing is listed unless a retrieval call actually returned it.
 
 </details>
 
@@ -225,7 +228,7 @@ Gemini is the reasoning layer over evidence that was already retrieved, not a so
 | Embedding model | `gemini-embedding-001` |
 | Calling pattern | Multi-turn loop: Gemini requests a tool → backend executes it in Python/SQL → result fed back → repeat until a final structured JSON answer |
 
-**Financial & Wealth Tools** (all backend-executed and parameterized — Gemini never writes or sees SQL): `create_financial_goal`, `get_financial_goals`, `simulate_savings_scenario`, `recommend_next_actions`, `search_financial_documents`, `search_financial_policy`, `get_transactions`, `get_transaction_details`, `get_spending_summary`, `compare_periods`, `find_duplicate_transactions`, `find_recurring_transactions`, `calculate_financial_metric` (a whitelisted set of metric names — anything else is rejected before it reaches a query).
+**Financial & Wealth Tools** (all backend-executed and parameterized: Gemini never writes or sees SQL): `create_financial_goal`, `get_financial_goals`, `simulate_savings_scenario`, `recommend_next_actions`, `search_financial_documents`, `search_financial_policy`, `get_transactions`, `get_transaction_details`, `get_spending_summary`, `compare_periods`, `find_duplicate_transactions`, `find_recurring_transactions`, `calculate_financial_metric` (a whitelisted set of metric names: anything else is rejected before it reaches a query).
 
 **Incident-investigation tools** (separate registry, same pattern): `get_incident`, `get_gateway_metrics`, `get_failed_payments`, `get_affected_merchants`, `get_merchant_metrics`, `get_merchant_refunds`, `get_webhook_activity`, `find_similar_incidents`, and related read-only lookups.
 
@@ -243,23 +246,23 @@ The system prompt and tool design are intended to keep Gemini from: fabricating 
 | `financial_accounts` | Logical accounts, derived from an optional account name at upload |
 | `financial_goals` | Tracked savings goals (target amount, current amount, target date, risk preference) |
 | `wealth_recommendations` | Audit log of scenario simulations & next-best-action runs with explicit assumptions |
-| `financial_documents` | One row per upload — filename, type, status, original file bytes, error message if failed |
+| `financial_documents` | One row per upload: filename, type, status, original file bytes, error message if failed |
 | `financial_document_chunks` | Chunked text + embedding vector (JSON) + page/section metadata |
 | `financial_transactions` | Structured transaction rows extracted from a document |
-| `financial_analysis_runs` | One row per AI Advisor question — query, tools called, evidence, response |
+| `financial_analysis_runs` | One row per AI Advisor question: query, tools called, evidence, response |
 
 **Incident investigation (inherited core platform)**
 
 | Table | Purpose |
 |---|---|
 | `merchants` / `orders` / `payments` / `refunds` / `webhook_events` | Canonical payment-lifecycle data (real + labeled simulation, source-tagged) |
-| `incidents` | Detected anomalies — type, severity, status, evidence |
+| `incidents` | Detected anomalies: type, severity, status, evidence |
 | `ai_investigations` / `ai_investigation_steps` | Gemini's report and the individual tool calls behind it |
 | `incident_embeddings` | Deterministic text-vector embeddings for case-memory matching |
 | `governed_actions` / `audit_logs` | Proposed actions and their append-only approval/execution trail |
 | `eval_ground_truth` | Labeled scenarios used to benchmark the anomaly detector |
 
-A deleted `financial_documents` row cascades to its chunks and transactions (`ON DELETE CASCADE`) — removing a document can't leave orphaned, still-searchable data behind.
+A deleted `financial_documents` row cascades to its chunks and transactions (`ON DELETE CASCADE`): removing a document cannot leave orphaned, still-searchable data behind.
 
 </details>
 
